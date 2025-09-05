@@ -2,7 +2,7 @@
 Intensity Interferometry Core Module
 
 Implementation of equations 1-14 from "Probing H0 and resolving AGN disks with ultrafast photon counters"
-(arXiv:2403.15903v1) for abstract intensity I_nu(nu,\hat{n}) using a modular design.
+(arXiv:2403.15903v1) for abstract intensity I_nu(nu,\\hat{n}) using a modular design.
 
 This module provides a general-purpose framework for intensity interferometry calculations
 with support for various source models and observational configurations.
@@ -72,17 +72,19 @@ class AbstractIntensitySource(ABC):
         """
         pass
     
-    def visibility_fft(self, nu: float, baseline: np.ndarray, grid_size: int = 128,
-                      sky_extent: float = 1e-4) -> complex:
+    def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
+                                    grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
         """
-        Default visibility calculation using FFT-based integration
+        Calculate simplified fringe visibility (Equation 8 without time dependence)
         
-        V(ν,B) = ∫ I_ν(ν,n̂) exp(2πi B⊥⋅n̂/λ) d²n̂ / ∫ I_ν(ν,n̂) d²n̂
+        V_simple(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
+        
+        This is the normalized spatial Fourier transform of the intensity distribution.
         
         Parameters:
         -----------
-        nu : float
-            Frequency [Hz]
+        nu_0 : float
+            Central frequency [Hz]
         baseline : array_like, shape (3,)
             Baseline vector [m]
         grid_size : int, optional
@@ -92,12 +94,12 @@ class AbstractIntensitySource(ABC):
             
         Returns:
         --------
-        visibility : complex
-            Complex visibility
+        simple_fringe_visibility : complex
+            Normalized spatial fringe visibility
         """
         # Calculate wavelength
         c = 2.99792458e8
-        wavelength = c / nu
+        wavelength = c / nu_0
         
         # Use only perpendicular baseline components
         baseline_perp = baseline[:2]
@@ -112,7 +114,7 @@ class AbstractIntensitySource(ABC):
         n_hat_array = np.stack([sky_x.ravel(), sky_y.ravel()], axis=1)
         
         for i, n_hat in enumerate(n_hat_array):
-            intensity_grid.ravel()[i] = self.intensity(nu, n_hat)
+            intensity_grid.ravel()[i] = self.intensity(nu_0, n_hat)
         
         # Compute 2D FFT of intensity distribution
         intensity_fft = fft2(intensity_grid)
@@ -136,6 +138,97 @@ class AbstractIntensitySource(ABC):
         
         # Interpolate FFT result at the desired spatial frequency
         return self._bilinear_interpolate(intensity_fft, u_idx, v_idx)
+    
+    def visibility(self, nu: float, baseline: np.ndarray, delta_t: float = 0.0,
+                  grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+        """
+        Default visibility calculation - Equation (1)
+        
+        V(ν,B,Δt) = ∫ I_ν(ν,n̂) exp(i[k⋅B - ωΔt]) d²n̂
+        
+        Uses simplified_fringe_visibility and restores I_tot normalization factor.
+        Subclasses can override this method to provide analytical solutions.
+        
+        Parameters:
+        -----------
+        nu : float
+            Frequency [Hz]
+        baseline : array_like, shape (3,)
+            Baseline vector [m]
+        delta_t : float, optional
+            Time lag [s]
+        grid_size : int, optional
+            Size of FFT grid (default: 128)
+        sky_extent : float, optional
+            Angular extent of sky grid [radians] (default: 1e-4)
+            
+        Returns:
+        --------
+        visibility : complex
+            Unnormalized complex visibility including time delay
+        """
+        # Get normalized spatial fringe visibility (Equation 8)
+        normalized_visibility = self.simplified_fringe_visibility(nu, baseline, grid_size, sky_extent)
+        
+        # Restore I_tot factor to get unnormalized visibility (Equation 1)
+        total_flux = self.total_flux(nu)
+        visibility = normalized_visibility * total_flux
+        
+        # Apply time delay phase factor exp(-iωΔt) as per Equation (1)
+        if delta_t != 0.0:
+            omega = 2 * np.pi * nu
+            time_phase = np.exp(-1j * omega * delta_t)
+            visibility *= time_phase
+        
+        return visibility
+    
+    def normalized_fringe_visibility(self, nu_0: float, delta_nu: float,
+                                   baseline: np.ndarray, delta_t: float = 0.0,
+                                   grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+        """
+        Calculate normalized fringe visibility using factorized form - Equation (7)
+        
+        V̄(ν₀,Δν,B,Δt) = V̄(ν₀,B) * sinc(ΔωΔt/2) * exp(-iω₀Δt)
+        
+        Where V̄(ν₀,B) is the spatial fringe visibility and sinc factor accounts for bandwidth.
+        
+        Parameters:
+        -----------
+        nu_0 : float
+            Central frequency [Hz]
+        delta_nu : float
+            Bandwidth [Hz]
+        baseline : array_like, shape (3,)
+            Baseline vector [m]
+        delta_t : float, optional
+            Time lag [s]
+        grid_size : int, optional
+            Size of FFT grid (default: 128)
+        sky_extent : float, optional
+            Angular extent of sky grid [radians] (default: 1e-4)
+            
+        Returns:
+        --------
+        normalized_visibility : complex
+            Normalized fringe visibility with bandwidth and time effects
+        """
+        # Get spatial fringe visibility (Equation 8)
+        spatial_visibility = self.simplified_fringe_visibility(nu_0, baseline, grid_size, sky_extent)
+        
+        # Apply temporal factor from Equation 7
+        if delta_t != 0.0:
+            # Calculate bandwidth factor
+            delta_omega = 2 * np.pi * delta_nu
+            sinc_factor = np.sinc(delta_omega * delta_t / (2 * np.pi))
+            
+            # Apply central frequency phase (assuming ω₀Δt term is absorbed as mentioned in paper)
+            temporal_factor = sinc_factor
+            
+            return spatial_visibility * temporal_factor
+        else:
+            return spatial_visibility
+    
+    
     
     def _bilinear_interpolate(self, grid: np.ndarray, x: float, y: float) -> complex:
         """
@@ -215,7 +308,7 @@ class IntensityInterferometry:
         
         V(ν,B,Δt) = ∫ I_ν(ν,n̂) exp(i[k⋅B - ωΔt]) d²n̂
         
-        Uses the source's visibility calculation method (analytical if available, FFT otherwise).
+        Uses the source's visibility calculation method which now includes time delay.
         
         Parameters:
         -----------
@@ -229,29 +322,17 @@ class IntensityInterferometry:
         Returns:
         --------
         visibility : complex
-            Complex visibility
+            Complex visibility including time delay
         """
-        # Check if source has analytical visibility method
-        if hasattr(self.source, 'visibility_analytical'):
-            visibility = self.source.visibility_analytical(nu, baseline)
-        else:
-            # Use default FFT-based visibility calculation
-            visibility = self.source.visibility_fft(nu, baseline, self.grid_size, self.sky_extent)
-        
-        # Apply time delay phase factor exp(-iωΔt)
-        if delta_t != 0.0:
-            omega = 2 * np.pi * nu
-            time_phase = np.exp(-1j * omega * delta_t)
-            visibility *= time_phase
-        
-        return visibility
+        # Use source's visibility method (now includes delta_t parameter)
+        return self.source.visibility(nu, baseline, delta_t, self.grid_size, self.sky_extent)
     
-    def normalized_fringe_visibility(self, nu_0: float, delta_nu: float, 
+    def normalized_fringe_visibility(self, nu_0: float, delta_nu: float,
                                    baseline: np.ndarray, delta_t: float = 0.0) -> complex:
         """
-        Calculate normalized fringe visibility V̄(ν₀,Δν,B,Δt) - Equation (2)
+        Calculate normalized fringe visibility V̄(ν₀,Δν,B,Δt) using source's method - Equation (2)
         
-        V̄ = ∫[ν₀-Δν/2 to ν₀+Δν/2] dν V(ν,B,Δt) / ∫[ν₀-Δν/2 to ν₀+Δν/2] dν ∫ d²n̂ I_ν(ν,n̂)
+        Delegates to the source's normalized_fringe_visibility method.
         
         Parameters:
         -----------
@@ -269,25 +350,8 @@ class IntensityInterferometry:
         normalized_visibility : complex
             Normalized fringe visibility
         """
-        nu_min = nu_0 - delta_nu / 2
-        nu_max = nu_0 + delta_nu / 2
-        
-        # Numerator: ∫ dν V(ν,B,Δt)
-        def visibility_integrand(nu):
-            return self.visibility(nu, baseline, delta_t)
-        
-        # For complex integration, integrate real and imaginary parts separately
-        real_num, _ = quad(lambda nu: np.real(visibility_integrand(nu)), nu_min, nu_max)
-        imag_num, _ = quad(lambda nu: np.imag(visibility_integrand(nu)), nu_min, nu_max)
-        numerator = complex(real_num, imag_num)
-        
-        # Denominator: ∫ dν ∫ d²n̂ I_ν(ν,n̂)
-        def flux_integrand(nu):
-            return self.source.total_flux(nu)
-        
-        denominator, _ = quad(flux_integrand, nu_min, nu_max)
-        
-        return numerator / denominator if denominator != 0 else 0.0
+        return self.source.normalized_fringe_visibility(nu_0, delta_nu, baseline, delta_t,
+                                                       self.grid_size, self.sky_extent)
     
     def photon_count_covariance(self, params: ObservationalParameters) -> float:
         """
@@ -592,13 +656,25 @@ class PointSource(AbstractIntensitySource):
     def total_flux(self, nu: float) -> float:
         return self.flux_density
     
-    def visibility_analytical(self, nu: float, baseline: np.ndarray) -> complex:
+    
+    def simplified_visibility(self, nu_0: float, baseline: np.ndarray,
+                             grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
         """
-        Analytical visibility for point source
+        Analytical simplified visibility for point source (numerator of Equation 8)
         
-        A point source has unit visibility at all baselines
+        For a point source, this equals the total flux
         """
-        return 1.0 + 0.0j
+        return self.flux_density + 0.0j
+    
+    def normalized_fringe_visibility(self, nu_0: float, delta_nu: float,
+                                   baseline: np.ndarray, delta_t: float = 0.0,
+                                   grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+        """
+        Analytical normalized fringe visibility for point source - Equation (2)
+        
+        For a point source with constant flux, the normalized visibility equals the visibility
+        """
+        return self.visibility(nu_0, baseline, delta_t, grid_size, sky_extent)
 
 
 class UniformDisk(AbstractIntensitySource):
@@ -623,3 +699,12 @@ class UniformDisk(AbstractIntensitySource):
     
     def total_flux(self, nu: float) -> float:
         return self.flux_density
+    
+    def simplified_visibility(self, nu_0: float, baseline: np.ndarray,
+                             grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+        """
+        Simplified visibility for uniform disk (numerator of Equation 8)
+        
+        Uses default FFT-based calculation from base class
+        """
+        return super().simplified_visibility(nu_0, baseline, grid_size, sky_extent)

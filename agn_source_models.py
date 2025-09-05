@@ -1,4 +1,4 @@
-"""
+l"""
 Simplified AGN Source Models for Intensity Interferometry
 
 Streamlined implementation focusing on computational efficiency
@@ -118,11 +118,12 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         except:
             return 1e-12  # Fallback value
     
-    def visibility_analytical(self, nu: float, baseline: np.ndarray) -> complex:
+    def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
+                                    grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
         """
-        Simplified visibility calculation using efficient integration
+        Analytical simplified fringe visibility for Shakura-Sunyaev disk - Equation (8)
         
-        V(ν,B) = ∫ dR R I(R) J₀(2πqνBR/cD) / ∫ dR R I(R)
+        V_simple(ν₀,B) = ∫ dR R I(R) J₀(2πqνBR/cD) / ∫ dR R I(R)
         where q = √(cos²i cos²φ_B + sin²φ_B)
         """
         # Calculate baseline parameters
@@ -134,7 +135,7 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         
         # Wave number
         c = 2.99792458e8
-        k = 2 * np.pi * nu / c
+        k = 2 * np.pi * nu_0 / c
         
         # Calculate the oscillatory parameter
         alpha = k * B_mag * self.GM_over_c2 * q / self.distance
@@ -192,6 +193,15 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
             visibility = visibility / visibility_mag
         
         return complex(visibility.real, 0.0)
+    
+    def simplified_visibility(self, nu_0: float, baseline: np.ndarray,
+                             grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+        """
+        Simplified visibility for Shakura-Sunyaev disk (numerator of Equation 8)
+        
+        Uses default FFT-based calculation from base class
+        """
+        return super().simplified_visibility(nu_0, baseline, grid_size, sky_extent)
     
 
 
