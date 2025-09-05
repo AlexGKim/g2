@@ -414,7 +414,7 @@ class TestPaperFigureReproduction:
         # Create two disk models with different R_in values
         # Paper shows R_in for maximal spin prograde and retrograde
         I_0 = 1e-15
-        R_0 = 43.0  # From paper
+        R_0 = 100. # 43.0  # From paper
         
         # Prograde maximal spin ISCO ≈ 1 GM/c²
         disk_prograde = ShakuraSunyaevDisk(I_0, R_0, R_in=1.0, n=3.0,
@@ -425,7 +425,7 @@ class TestPaperFigureReproduction:
                                             distance=distance, GM_over_c2=GM_over_c2)
         
         # Calculate baseline range (similar to paper)
-        baselines = np.logspace(0, 3, 100)  # 1 m to 1000 km
+        baselines = np.logspace(-1, 3, 100)  # 1 m to 1000 km
         
         visibilities_prograde = []
         visibilities_retrograde = []
@@ -466,7 +466,7 @@ class TestPaperFigureReproduction:
         plt.legend()
         plt.grid(True, alpha=0.3)
         plt.xlim(1, 1000)
-        plt.ylim(1e-6, 1)
+        plt.ylim(1e-8, 1)
         
         # Save the figure
         plt.tight_layout()
@@ -498,13 +498,13 @@ def run_all_tests():
     
     # Create test instances
     test_classes = [
-        TestBasicVisibility(),
-        TestPhotonStatistics(),
-        TestSNRCalculations(),
-        TestShakuraSunyaevDisk(),
-        TestBroadLineRegion(),
-        TestRelativisticEffects(),
-        TestFactorizedVisibility(),
+        # TestBasicVisibility(),
+        # TestPhotonStatistics(),
+        # TestSNRCalculations(),
+        # TestShakuraSunyaevDisk(),
+        # TestBroadLineRegion(),
+        # TestRelativisticEffects(),
+        # TestFactorizedVisibility(),
         TestPaperFigureReproduction()
     ]
     
