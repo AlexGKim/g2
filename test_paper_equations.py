@@ -498,13 +498,13 @@ def run_all_tests():
     
     # Create test instances
     test_classes = [
-        # TestBasicVisibility(),
-        # TestPhotonStatistics(),
-        # TestSNRCalculations(),
-        # TestShakuraSunyaevDisk(),
-        # TestBroadLineRegion(),
-        # TestRelativisticEffects(),
-        # TestFactorizedVisibility(),
+        TestBasicVisibility(),
+        TestPhotonStatistics(),
+        TestSNRCalculations(),
+        TestShakuraSunyaevDisk(),
+        TestBroadLineRegion(),
+        TestRelativisticEffects(),
+        TestFactorizedVisibility(),
         TestPaperFigureReproduction()
     ]
     

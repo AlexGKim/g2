@@ -16,6 +16,7 @@ from typing import Tuple, Optional, Callable, Union
 import scipy.special as sp
 from scipy.integrate import quad, dblquad
 from scipy.fft import fft2, ifft2, fftfreq, fftshift, ifftshift
+from scipy.interpolate import RegularGridInterpolator
 from dataclasses import dataclass
 
 
@@ -70,6 +71,112 @@ class AbstractIntensitySource(ABC):
             Total flux [W m^-2 Hz^-1]
         """
         pass
+    
+    def visibility_fft(self, nu: float, baseline: np.ndarray, grid_size: int = 128,
+                      sky_extent: float = 1e-4) -> complex:
+        """
+        Default visibility calculation using FFT-based integration
+        
+        V(ν,B) = ∫ I_ν(ν,n̂) exp(2πi B⊥⋅n̂/λ) d²n̂ / ∫ I_ν(ν,n̂) d²n̂
+        
+        Parameters:
+        -----------
+        nu : float
+            Frequency [Hz]
+        baseline : array_like, shape (3,)
+            Baseline vector [m]
+        grid_size : int, optional
+            Size of FFT grid (default: 128)
+        sky_extent : float, optional
+            Angular extent of sky grid [radians] (default: 1e-4)
+            
+        Returns:
+        --------
+        visibility : complex
+            Complex visibility
+        """
+        # Calculate wavelength
+        c = 2.99792458e8
+        wavelength = c / nu
+        
+        # Use only perpendicular baseline components
+        baseline_perp = baseline[:2]
+        
+        # Set up coordinate grids
+        pixel_scale = sky_extent / grid_size
+        coords_1d = np.linspace(-sky_extent/2, sky_extent/2, grid_size)
+        sky_x, sky_y = np.meshgrid(coords_1d, coords_1d)
+        
+        # Calculate intensity on grid
+        intensity_grid = np.zeros((grid_size, grid_size))
+        n_hat_array = np.stack([sky_x.ravel(), sky_y.ravel()], axis=1)
+        
+        for i, n_hat in enumerate(n_hat_array):
+            intensity_grid.ravel()[i] = self.intensity(nu, n_hat)
+        
+        # Compute 2D FFT of intensity distribution
+        intensity_fft = fft2(intensity_grid)
+        intensity_fft = fftshift(intensity_fft)
+        
+        # Normalize by pixel area and total flux
+        pixel_area = pixel_scale**2
+        total_flux = np.sum(intensity_grid) * pixel_area
+        
+        if total_flux > 0:
+            intensity_fft *= pixel_area / total_flux
+        
+        # Convert baseline to spatial frequency coordinates
+        u_freq = baseline_perp[0] / wavelength if len(baseline_perp) > 0 else 0.0
+        v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
+        
+        # Convert to grid indices
+        freq_resolution = 1.0 / sky_extent
+        u_idx = u_freq / freq_resolution + grid_size // 2
+        v_idx = v_freq / freq_resolution + grid_size // 2
+        
+        # Interpolate FFT result at the desired spatial frequency
+        return self._bilinear_interpolate(intensity_fft, u_idx, v_idx)
+    
+    def _bilinear_interpolate(self, grid: np.ndarray, x: float, y: float) -> complex:
+        """
+        Perform bilinear interpolation using SciPy's RegularGridInterpolator
+        
+        Parameters:
+        -----------
+        grid : ndarray
+            2D complex array
+        x, y : float
+            Interpolation coordinates (can be fractional)
+            
+        Returns:
+        --------
+        value : complex
+            Interpolated value
+        """
+        grid_size = grid.shape[0]
+        
+        # Handle boundary conditions
+        if (x < 0 or x >= grid_size - 1 or
+            y < 0 or y >= grid_size - 1):
+            return 0.0 + 0.0j
+        
+        # Create coordinate arrays
+        coords = (np.arange(grid_size), np.arange(grid_size))
+        
+        # Handle complex interpolation by interpolating real and imaginary parts separately
+        if np.iscomplexobj(grid):
+            interp_real = RegularGridInterpolator(coords, grid.real, method='linear',
+                                                bounds_error=False, fill_value=0.0)
+            interp_imag = RegularGridInterpolator(coords, grid.imag, method='linear',
+                                                bounds_error=False, fill_value=0.0)
+            
+            real_val = interp_real([y, x])[0]  # Note: y, x order for RegularGridInterpolator
+            imag_val = interp_imag([y, x])[0]
+            return complex(real_val, imag_val)
+        else:
+            interp = RegularGridInterpolator(coords, grid, method='linear',
+                                           bounds_error=False, fill_value=0.0)
+            return complex(interp([y, x])[0], 0.0)
 
 
 class IntensityInterferometry:
@@ -98,56 +205,17 @@ class IntensityInterferometry:
         self.c = 2.99792458e8  # Speed of light [m/s]
         self.h = 6.62607015e-34  # Planck constant [J⋅s]
         
-        # FFT grid parameters
+        # FFT grid parameters (passed to source visibility methods)
         self.grid_size = grid_size
         self.sky_extent = sky_extent
-        self.pixel_scale = sky_extent / grid_size
-        
-        # Create coordinate grids
-        self._setup_coordinate_grids()
-    
-    def _setup_coordinate_grids(self):
-        """Set up coordinate grids for FFT calculations"""
-        # Sky coordinate grid (angular coordinates)
-        coords_1d = np.linspace(-self.sky_extent/2, self.sky_extent/2, self.grid_size)
-        self.sky_x, self.sky_y = np.meshgrid(coords_1d, coords_1d)
-        
-        # Spatial frequency grid (baseline coordinates)
-        freq_1d = fftfreq(self.grid_size, self.pixel_scale)
-        self.freq_x, self.freq_y = np.meshgrid(freq_1d, freq_1d)
-    
-    def _get_intensity_grid(self, nu: float) -> np.ndarray:
-        """
-        Get intensity on sky grid for FFT calculations
-        
-        Parameters:
-        -----------
-        nu : float
-            Frequency [Hz]
-            
-        Returns:
-        --------
-        intensity_grid : ndarray, shape (grid_size, grid_size)
-            Intensity values on sky grid
-        """
-        intensity_grid = np.zeros((self.grid_size, self.grid_size))
-        
-        # Vectorized calculation for efficiency
-        n_hat_array = np.stack([self.sky_x.ravel(), self.sky_y.ravel()], axis=1)
-        
-        for i, n_hat in enumerate(n_hat_array):
-            intensity_grid.ravel()[i] = self.source.intensity(nu, n_hat)
-        
-        return intensity_grid
     
     def visibility(self, nu: float, baseline: np.ndarray, delta_t: float = 0.0) -> complex:
         """
-        Calculate complex visibility V(ν,B,Δt) using FFT - Equation (1)
+        Calculate complex visibility V(ν,B,Δt) using source's visibility method - Equation (1)
         
         V(ν,B,Δt) = ∫ I_ν(ν,n̂) exp(i[k⋅B - ωΔt]) d²n̂
         
-        Uses 2D FFT to efficiently compute the Fourier transform of the intensity distribution.
-        The visibility is the Fourier transform of the intensity distribution.
+        Uses the source's visibility calculation method (analytical if available, FFT otherwise).
         
         Parameters:
         -----------
@@ -163,41 +231,12 @@ class IntensityInterferometry:
         visibility : complex
             Complex visibility
         """
-        # Get intensity distribution on grid
-        intensity_grid = self._get_intensity_grid(nu)
-        
-        # Calculate wavelength
-        wavelength = self.c / nu
-        
-        # Use only perpendicular baseline components for 2D calculation
-        baseline_perp = baseline[:2]
-        
-        # Compute 2D FFT of intensity distribution
-        # The FFT gives us the visibility function V(u,v)
-        intensity_fft = fft2(intensity_grid)
-        intensity_fft = fftshift(intensity_fft)  # Center zero frequency
-        
-        # Normalize by pixel area and total flux for proper scaling
-        pixel_area = self.pixel_scale**2
-        total_flux = np.sum(intensity_grid) * pixel_area
-        
-        if total_flux > 0:
-            intensity_fft *= pixel_area / total_flux
-        
-        # Convert baseline to spatial frequency coordinates
-        # Spatial frequency u = B_x / λ, v = B_y / λ
-        u_freq = baseline_perp[0] / wavelength if len(baseline_perp) > 0 else 0.0
-        v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
-        
-        # Convert to grid indices
-        # Frequency resolution in the FFT
-        freq_resolution = 1.0 / self.sky_extent
-        
-        u_idx = u_freq / freq_resolution + self.grid_size // 2
-        v_idx = v_freq / freq_resolution + self.grid_size // 2
-        
-        # Interpolate FFT result at the desired spatial frequency
-        visibility = self._bilinear_interpolate(intensity_fft, u_idx, v_idx)
+        # Check if source has analytical visibility method
+        if hasattr(self.source, 'visibility_analytical'):
+            visibility = self.source.visibility_analytical(nu, baseline)
+        else:
+            # Use default FFT-based visibility calculation
+            visibility = self.source.visibility_fft(nu, baseline, self.grid_size, self.sky_extent)
         
         # Apply time delay phase factor exp(-iωΔt)
         if delta_t != 0.0:
@@ -206,43 +245,6 @@ class IntensityInterferometry:
             visibility *= time_phase
         
         return visibility
-    
-    def _bilinear_interpolate(self, grid: np.ndarray, x: float, y: float) -> complex:
-        """
-        Perform bilinear interpolation on complex grid
-        
-        Parameters:
-        -----------
-        grid : ndarray
-            2D complex array
-        x, y : float
-            Interpolation coordinates (can be fractional)
-            
-        Returns:
-        --------
-        value : complex
-            Interpolated value
-        """
-        # Handle boundary conditions
-        if (x < 0 or x >= self.grid_size - 1 or
-            y < 0 or y >= self.grid_size - 1):
-            return 0.0 + 0.0j
-        
-        # Get integer and fractional parts
-        x0, x1 = int(x), min(int(x) + 1, self.grid_size - 1)
-        y0, y1 = int(y), min(int(y) + 1, self.grid_size - 1)
-        
-        # Fractional parts
-        fx = x - int(x)
-        fy = y - int(y)
-        
-        # Bilinear interpolation
-        value = (grid[y0, x0] * (1 - fx) * (1 - fy) +
-                grid[y0, x1] * fx * (1 - fy) +
-                grid[y1, x0] * (1 - fx) * fy +
-                grid[y1, x1] * fx * fy)
-        
-        return value
     
     def normalized_fringe_visibility(self, nu_0: float, delta_nu: float, 
                                    baseline: np.ndarray, delta_t: float = 0.0) -> complex:
@@ -345,7 +347,7 @@ class IntensityInterferometry:
         
         # Timing jitter factor for narrow bandwidth
         delta_omega = 2 * np.pi * params.delta_nu
-        if sigma_t * delta_omega >> 1:
+        if sigma_t * delta_omega > 1:
             # Equation (11): f ≈ exp(-Δt²/4σₜ²) / (√4πσₜ Δν)
             jitter_factor = (np.exp(-params.delta_t**2 / (4 * sigma_t**2)) / 
                            (np.sqrt(4 * np.pi) * sigma_t * params.delta_nu))
@@ -402,7 +404,7 @@ class IntensityInterferometry:
                                             params.baseline, params.delta_t)
         
         # Use simplified expression for narrow bandwidth (Equation 12)
-        if params.sigma_t * 2 * np.pi * params.delta_nu >> 1:
+        if params.sigma_t * 2 * np.pi * params.delta_nu > 1:
             snr_squared = (np.abs(V)**4 / np.sqrt(128 * np.pi) * 
                           (dGamma_dnu / params.delta_nu)**2 * 
                           params.T_obs / params.sigma_t)
@@ -589,6 +591,14 @@ class PointSource(AbstractIntensitySource):
     
     def total_flux(self, nu: float) -> float:
         return self.flux_density
+    
+    def visibility_analytical(self, nu: float, baseline: np.ndarray) -> complex:
+        """
+        Analytical visibility for point source
+        
+        A point source has unit visibility at all baselines
+        """
+        return 1.0 + 0.0j
 
 
 class UniformDisk(AbstractIntensitySource):
