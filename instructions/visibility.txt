@@ -1,0 +1,22 @@
+Generate code for equations 1 - 14 in the paper PhysRevD.109.123029.pdf for an abstract intensity I_nu(nu,\hat{n}) using a modular design suited for a general-purpose package.
+
+Intensities may have analytic or efficient implementations of visibility and normalized fringe visibility.
+
+Use FFT to efficiently solve integrals.
+
+Include in test module a reproduction of the plot in Figure 1.
+
+
+Analyze paper PhysRevD.109.123029.pdf
+Treat Bessel function J_0(r) as its equivalent sin(r)/r
+Design modular architecture for intensity calculations
+Implement core visibility function (Equation 1)
+Implement normalized fringe visibility (Equation 2)
+Implement intensity correlation functions (Equations 3-6)
+Implement factorized visibility (Equations 7-8)
+Implement timing jitter effects (Equations 9-12)
+Implement SNR calculations (Equations 13-14)
+Create abstract base classes for extensibility
+Add comprehensive documentation and examples
+Test implementation with paper examples
+Add Figure 1 reproduction test
