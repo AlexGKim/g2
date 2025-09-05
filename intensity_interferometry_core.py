@@ -72,6 +72,76 @@ class AbstractIntensitySource(ABC):
         """
         pass
     
+    def inverse_noise(self, nu_0: float, A: float, T_obs: float, sigma_t: float) -> float:
+        """
+        Calculate inverse noise σ_{|V|²}^(-1) using equation 14 and Gamma expression
+        
+        From equation 14: σ_{|V|²}^(-1) = (dΓ/dν) * √(T_obs/σ_t) * (128π)^(-1/4)
+        Where dΓ/dν = AF_ν/(hν_0) from the Gamma expression beneath equation 14
+        
+        Parameters:
+        -----------
+        nu_0 : float
+            Central frequency [Hz]
+        A : float
+            Telescope area [m^2]
+        T_obs : float
+            Total observing time [s]
+        sigma_t : float
+            Timing jitter RMS [s]
+            
+        Returns:
+        --------
+        inverse_noise : float
+            Inverse noise σ_{|V|²}^(-1) for visibility measurement error
+        """
+        # Planck constant [J⋅s]
+        h = 6.62607015e-34
+        
+        # Get total flux F_nu at central frequency
+        F_nu = self.total_flux(nu_0)
+        
+        # Calculate dΓ/dν = AF_ν/(hν_0) from Gamma expression
+        dGamma_dnu = A * F_nu / (h * nu_0)
+        
+        # Calculate inverse noise using equation 14
+        # σ_{|V|²}^(-1) = (dΓ/dν) * √(T_obs/σ_t) * (128π)^(-1/4)
+        inverse_noise = (dGamma_dnu *
+                        np.sqrt(T_obs / sigma_t) *
+                        (128 * np.pi)**(-0.25))
+        
+        return inverse_noise
+    
+    def signal(self, nu_0: float, baseline: np.ndarray,
+               grid_size: int = 128, sky_extent: float = 1e-4) -> float:
+        """
+        Calculate signal |V|² - the amplitude squared of simplified fringe visibility
+        
+        This is the observable quantity in intensity interferometry, representing
+        the squared magnitude of the normalized spatial fringe visibility.
+        
+        Parameters:
+        -----------
+        nu_0 : float
+            Central frequency [Hz]
+        baseline : array_like, shape (3,)
+            Baseline vector [m]
+        grid_size : int, optional
+            Size of FFT grid (default: 128)
+        sky_extent : float, optional
+            Angular extent of sky grid [radians] (default: 1e-4)
+            
+        Returns:
+        --------
+        signal : float
+            Signal |V|² - squared amplitude of fringe visibility
+        """
+        # Get the complex simplified fringe visibility
+        visibility = self.simplified_fringe_visibility(nu_0, baseline, grid_size, sky_extent)
+        
+        # Return the squared magnitude |V|²
+        return np.abs(visibility)**2
+    
     def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
                                     grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
         """
