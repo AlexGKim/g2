@@ -1,4 +1,4 @@
-l"""
+"""
 Simplified AGN Source Models for Intensity Interferometry
 
 Streamlined implementation focusing on computational efficiency

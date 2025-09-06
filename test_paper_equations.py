@@ -182,6 +182,129 @@ class TestSNRCalculations:
         assert np.isfinite(sigma_v2), f"Visibility error should be finite, got {sigma_v2}"
 
 
+class TestInverseNoise:
+    """Test inverse noise implementation - Equation (14)"""
+    
+    def test_inverse_noise_equation_14(self):
+        """Test that inverse_noise method correctly implements equation 14"""
+        # Simple test parameters
+        nu_0 = 5e14  # Hz
+        A = 100.0  # m²
+        T_obs = 3600.0  # 1 hour
+        sigma_t = 10e-12  # 10 ps
+        F_nu = 1e-12  # W m⁻² Hz⁻¹
+        
+        # Create source
+        source = PointSource(F_nu)
+        
+        # Calculate using our method
+        inverse_noise = source.inverse_noise(nu_0, A, T_obs, sigma_t)
+        
+        # Calculate manually using equation 14
+        h = 6.62607015e-34
+        dGamma_dnu = A * F_nu / (h * nu_0)
+        manual_inverse_noise = (dGamma_dnu *
+                               np.sqrt(T_obs / sigma_t) *
+                               (128 * np.pi)**(-0.25))
+        
+        # Should match exactly
+        assert abs(inverse_noise - manual_inverse_noise) < 1e-10, \
+            f"Implementation should match equation 14: {inverse_noise} vs {manual_inverse_noise}"
+    
+    def test_inverse_noise_scaling(self):
+        """Test inverse noise scaling relationships"""
+        source = PointSource(1e-12)
+        
+        # Base parameters
+        nu_0 = 5e14
+        A = 100.0
+        T_obs = 3600.0
+        sigma_t = 10e-12
+        
+        base_result = source.inverse_noise(nu_0, A, T_obs, sigma_t)
+        
+        # Test scaling with telescope area (should be linear)
+        result_2A = source.inverse_noise(nu_0, 2*A, T_obs, sigma_t)
+        area_ratio = result_2A / base_result
+        assert abs(area_ratio - 2.0) < 0.01, f"Should scale linearly with area: {area_ratio}"
+        
+        # Test scaling with observing time (should be √T_obs)
+        result_2T = source.inverse_noise(nu_0, A, 2*T_obs, sigma_t)
+        time_ratio = result_2T / base_result
+        expected_time_ratio = np.sqrt(2)
+        assert abs(time_ratio - expected_time_ratio) < 0.01, \
+            f"Should scale as √T_obs: {time_ratio} vs {expected_time_ratio}"
+        
+        # Test scaling with timing jitter (should be 1/√σ_t)
+        result_2sigma = source.inverse_noise(nu_0, A, T_obs, 2*sigma_t)
+        jitter_ratio = result_2sigma / base_result
+        expected_jitter_ratio = 1/np.sqrt(2)
+        assert abs(jitter_ratio - expected_jitter_ratio) < 0.01, \
+            f"Should scale as 1/√σ_t: {jitter_ratio} vs {expected_jitter_ratio}"
+    
+    def test_iras_09149_6206_example(self):
+        """
+        Test inverse_noise method using IRAS 09149-6206 numerical example
+        from Section IV.D (after equation 46)
+        """
+        # Parameters from the numerical example (Section IV.D)
+        # IRAS 09149-6206 in Hα line
+        
+        # Central frequency for Hα line (6560 Å)
+        lambda_Ha = 6560e-10  # m
+        c = 2.99792458e8  # m/s
+        nu_0 = c / lambda_Ha  # Hz
+        
+        # Telescope parameters (CTA South MST array)
+        n_t = 14  # Number of telescopes
+        A = 88.0  # Telescope area [m²]
+        
+        # Observational parameters
+        T_obs = 24 * 3600  # 24 hours [s]
+        sigma_t = 30e-12 / 2.35  # 30 ps FWHM -> RMS [s]
+        
+        # From paper: dΓ/dν = 4×10⁻⁷ for this source
+        h = 6.62607015e-34  # Planck constant
+        dGamma_dnu_paper = 4e-7
+        
+        # Calculate flux density that gives this dΓ/dν
+        # dΓ/dν = AF_ν/(hν_0) => F_ν = dΓ/dν * h * ν_0 / A
+        F_nu = dGamma_dnu_paper * h * nu_0 / A
+        
+        # Create source and test inverse_noise
+        source = PointSource(F_nu)
+        
+        # Calculate inverse noise for single telescope
+        inverse_noise_single = source.inverse_noise(nu_0, A, T_obs, sigma_t)
+        
+        # For telescope array, account for number of telescope pairs
+        # For n_t telescopes, we have (n_t choose 2) = n_t(n_t-1)/2 pairs
+        n_pairs = n_t * (n_t - 1) // 2
+        
+        # The inverse noise scales as sqrt(n_pairs) for independent measurements
+        inverse_noise_array = inverse_noise_single * np.sqrt(n_pairs)
+        
+        # Verify the calculation matches our expectation
+        expected_value = dGamma_dnu_paper * np.sqrt(T_obs/sigma_t) * (128 * np.pi)**(-0.25) * np.sqrt(n_pairs)
+        
+        assert abs(inverse_noise_array - expected_value) < 1e-10, \
+            f"Array calculation should match expected: {inverse_noise_array} vs {expected_value}"
+        
+        # The paper mentions σ⁻¹_|V|² = 73 for this configuration
+        # Our implementation should be in the right ballpark
+        paper_value = 73
+        relative_error = abs(inverse_noise_array - paper_value) / paper_value
+        
+        # Allow for some discrepancy due to different normalizations or assumptions
+        assert relative_error < 0.5, \
+            f"Should be reasonably close to paper value: {inverse_noise_array} vs {paper_value} (error: {relative_error:.1%})"
+        
+        # Verify basic properties
+        assert inverse_noise_single > 0, "Single telescope inverse noise should be positive"
+        assert inverse_noise_array > inverse_noise_single, "Array should have better SNR than single telescope"
+        assert n_pairs == 91, f"14 telescopes should give 91 pairs, got {n_pairs}"
+
+
 class TestShakuraSunyaevDisk:
     """Test Shakura-Sunyaev disk model - Equations (21-22)"""
     
@@ -501,6 +624,7 @@ def run_all_tests():
         TestBasicVisibility(),
         TestPhotonStatistics(),
         TestSNRCalculations(),
+        TestInverseNoise(),
         TestShakuraSunyaevDisk(),
         TestBroadLineRegion(),
         TestRelativisticEffects(),
