@@ -83,7 +83,7 @@ class AbstractSource(ABC):
     -------------------
     intensity : Calculate specific intensity at given frequency and direction
     total_flux : Calculate total integrated flux at given frequency
-    g2 : Calculate second-order temporal coherence function
+    g2_minus_one : Calculate second-order temporal coherence function minus one
     
     Provided Methods
     ---------------
@@ -152,17 +152,18 @@ class AbstractSource(ABC):
         pass
     
     @abstractmethod
-    def g2(self, nu_0: float, delta_nu: float) -> float:
+    def g2_minus_one(self, delta_t: float, nu_0: float, delta_nu: float) -> float:
         """
-        Calculate second-order temporal coherence function g²(0).
+        Calculate second-order temporal coherence function minus one: g²(Δt) - 1.
         
-        This method computes the normalized second-order coherence function
-        for zero time delay, which characterizes the temporal intensity
-        correlations of the light field within a specified frequency window.
-        This is the fundamental quantity measured in intensity interferometry experiments.
+        This method computes g²(Δt) - 1, which directly represents the excess
+        correlation above the uncorrelated baseline. This quantity is fundamental
+        to intensity interferometry as it equals |V(B)|² for chaotic sources.
         
         Parameters
         ----------
+        delta_t : float
+            Time lag in seconds between the two intensity measurements.
         nu_0 : float
             Central frequency in Hz.
         delta_nu : float
@@ -172,41 +173,45 @@ class AbstractSource(ABC):
             
         Returns
         -------
-        g2 : float
-            Second-order temporal coherence function at zero delay.
-            For thermal (chaotic) light: g²(0) = 2
-            For coherent light: g²(0) = 1
+        g2_minus_one : float
+            Second-order temporal coherence function minus one at time lag Δt.
+            For thermal (chaotic) light: g²(0) - 1 = 1, g²(∞) - 1 = 0
+            For coherent light: g²(Δt) - 1 = 0 for all Δt
             
         Notes
         -----
         The second-order coherence function is defined as:
-            g²(τ) = ⟨I(t)I(t+τ)⟩ / ⟨I(t)⟩²
+            g²(Δt) = ⟨I(t)I(t+Δt)⟩ / I₀²
         
-        At zero time delay (τ = 0), this becomes:
-            g²(0) = ⟨I²(t)⟩ / ⟨I(t)⟩²
+        where I₀ = ⟨I(t)⟩ is the mean intensity.
+        
+        For intensity interferometry, the key relation is:
+            g²(Δt) - 1 = |V(B)|²
+        
+        where V(B) is the spatial visibility function (Equation 8). This connects
+        the temporal correlations measured by g² to the spatial structure of the
+        source through the visibility.
         
         The frequency window δν determines the coherence time τ_c ≈ 1/δν,
-        which affects the temporal correlations. Narrower frequency windows
-        lead to longer coherence times and stronger correlations.
-        
-        This temporal correlation is what enables intensity interferometry
-        to measure spatial information about astronomical sources through
-        the Hanbury Brown-Twiss effect.
+        which affects the temporal correlations. The g²-1 function typically
+        decays from its peak value at Δt = 0 to zero at large time lags.
         """
         pass
     
     def visibility(self, nu_0: float, baseline: np.ndarray,
                    grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
         """
-        Calculate the spatial part of the complex first order coherence function.
+        Calculate the spatial visibility function.
         
-        Computes the normalized spatial Fourier transform of the intensity distribution:
+        Computes the normalized spatial Fourier transform of the intensity distribution
+        as defined in Equation 8 of the PhysRev paper:
         
-            V_simple(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
+            V(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
         
-        This is the fundamental quantity measured in intensity interferometry.
-        The calculation uses FFT with proper grid setup and normalization to
-        accurately approximate the continuous Fourier transform.
+        This represents the spatial part of the complex first-order coherence function
+        and is the fundamental quantity that determines the fringe visibility in
+        intensity interferometry measurements. The calculation uses FFT with proper
+        grid setup and normalization to accurately approximate the continuous Fourier transform.
         
         Parameters
         ----------
@@ -360,20 +365,24 @@ class ChaoticSource(AbstractSource):
     
     Provided Methods
     ---------------
-    g2 : Calculate second-order temporal coherence function (implemented)
+    g1 : Calculate first-order temporal coherence function (implemented)
+    g2_minus_one : Calculate second-order temporal coherence function minus one (implemented)
     visibility : Calculate fringe visibility using FFT (inherited)
     """
     
-    def g2(self, nu_0: float, delta_nu: float) -> float:
+    def g1(self, delta_t: float, nu_0: float, delta_nu: float) -> complex:
         """
-        Calculate second-order temporal coherence function for chaotic light.
+        Calculate first-order temporal coherence function for chaotic light.
         
-        For chaotic (thermal) sources, the g² function is given by the flux
-        at the central frequency multiplied by the Fourier transform of the
-        tophat function representing the spectral window.
+        For chaotic (thermal) sources, the first-order coherence function g¹(Δt)
+        exhibits sinc behavior arising from the Fourier transform of the rectangular
+        spectral window. This is the fundamental coherence function from which
+        higher-order correlations are derived.
         
         Parameters
         ----------
+        delta_t : float
+            Time lag in seconds.
         nu_0 : float
             Central frequency in Hz.
         delta_nu : float
@@ -381,30 +390,80 @@ class ChaoticSource(AbstractSource):
             
         Returns
         -------
-        g2 : float
-            Second-order temporal coherence function at zero delay.
-            For chaotic light, this includes both the flux dependence
-            and the spectral correlation effects.
+        g1 : complex
+            First-order temporal coherence function at time lag Δt.
+            For chaotic light, this exhibits the characteristic sinc
+            behavior with correlations decaying as a function of time lag.
             
         Notes
         -----
         The implementation uses:
-            g²(ν₀, Δν) = F(ν₀) × sinc(π × Δν × τ)
+            g¹(Δt) = sinc(π × Δν × Δt)
         
-        where F(ν₀) is the total flux at the central frequency, and the
-        sinc function arises from the Fourier transform of the rectangular
-        spectral window. At τ = 0 (zero time delay), sinc(0) = 1, so:
-            g²(ν₀, Δν) = F(ν₀)
+        where the sinc function arises from the Fourier transform of the
+        rectangular spectral window. This gives:
+        - At Δt = 0: g¹(0) = 1 (maximum coherence)
+        - At large Δt: g¹(∞) → 0 (no coherence)
         
-        This represents the characteristic behavior of chaotic light where
-        the temporal correlations are determined by the spectral bandwidth.
+        The first-order coherence function is fundamental to the second-order
+        correlations measured in intensity interferometry through the relation:
+            g²(Δt) - 1 = |g¹(Δt)|²
         """
-        # Get flux at central frequency
-        flux = self.total_flux(nu_0)
+        # Calculate sinc function: sinc(π × Δν × Δt)
+        if delta_t == 0:
+            sinc_value = 1.0
+        else:
+            x = np.pi * delta_nu * delta_t
+            sinc_value = np.sin(x) / x
         
-        # For zero time delay, the Fourier transform of the tophat function
-        # evaluates to 1 (sinc(0) = 1), so g² = flux
-        return flux
+        # For chaotic light: g¹(Δt) = sinc(π × Δν × Δt)
+        # Return as complex number (phase is zero for this simple case)
+        return sinc_value + 0.0j
+    
+    def g2_minus_one(self, delta_t: float, nu_0: float, delta_nu: float) -> float:
+        """
+        Calculate second-order temporal coherence function minus one for chaotic light.
+        
+        For chaotic (thermal) sources, g²(Δt) - 1 is implemented as the square
+        magnitude of the first-order coherence function g¹(Δt). This relationship
+        is fundamental to chaotic light statistics and intensity interferometry.
+        
+        Parameters
+        ----------
+        delta_t : float
+            Time lag in seconds.
+        nu_0 : float
+            Central frequency in Hz.
+        delta_nu : float
+            Frequency window (bandwidth) in Hz.
+            
+        Returns
+        -------
+        g2_minus_one : float
+            Second-order temporal coherence function minus one at time lag Δt.
+            For chaotic light, this exhibits the characteristic sinc²
+            behavior with correlations decaying as a function of time lag.
+            
+        Notes
+        -----
+        The implementation uses:
+            g²(Δt) - 1 = |g¹(Δt)|²
+        
+        where g¹(Δt) is the first-order temporal coherence function.
+        This gives:
+        - At Δt = 0: g²(0) - 1 = |g¹(0)|² = 1 (maximum excess correlation)
+        - At large Δt: g²(∞) - 1 → |g¹(∞)|² = 0 (no excess correlation)
+        
+        The key relation for intensity interferometry is:
+            g²(Δt) - 1 = |V(B)|² = |g¹(Δt)|²
+        
+        where V(B) is the spatial visibility function (Equation 8). This connects
+        the temporal correlations measured by g²-1 to the spatial structure through
+        the first-order coherence function.
+        """
+        # Calculate g²(Δt) - 1 = |g¹(Δt)|²
+        g1_value = self.g1(delta_t, nu_0, delta_nu)
+        return abs(g1_value)**2
 
 
 class PointSource(ChaoticSource):
