@@ -476,9 +476,10 @@ class ChaoticSource(AbstractSource):
         the temporal correlations measured by g²-1 to the spatial structure through
         the first-order coherence function.
         """
-        # Calculate g²(Δt) - 1 = |g¹(Δt)|²
+        # Calculate g²(Δt) - 1 = |g¹(Δt)|² - 1
+        # For chaotic light: g²(Δt) = 1 + |g¹(Δt)|², so g²(Δt) - 1 = |g¹(Δt)|²
         g1_value = self.g1(delta_t, nu_0, delta_nu)
-        return abs(g1_value)**2 -1.0
+        return abs(g1_value)**2
 
 
 class PointSource(ChaoticSource):
@@ -532,12 +533,13 @@ class PointSource(ChaoticSource):
         """
         self.flux_function = flux_function
     
-    def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
+    def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, atol: float = 1e-10) -> Union[float, np.ndarray]:
         """
         Calculate point source intensity.
         
         For numerical implementation, the delta function is approximated by
-        returning a large value only when n̂ is very close to the origin.
+        returning the flux divided by the area of a small circle when n̂ is
+        very close to the origin.
         
         Parameters
         ----------
@@ -545,6 +547,9 @@ class PointSource(ChaoticSource):
             Frequency in Hz.
         n_hat : array_like, shape (2,)
             Sky direction in radians.
+        atol : float, optional
+            Tolerance for delta function approximation. The intensity is
+            flux/(π*atol²) within this radius, zero outside. Default is 1e-10.
             
         Returns
         -------
@@ -557,9 +562,9 @@ class PointSource(ChaoticSource):
         else:
             flux = np.array([self.flux_function(f) for f in nu])
         
-        # Approximate delta function - large value only at origin
-        if np.allclose(n_hat, [0, 0], atol=1e-6):
-            return flux / (4 * np.pi * 1e-12)  # Approximate delta
+        # Approximate delta function - flux divided by circle area within atol
+        if np.allclose(n_hat, [0, 0], atol=atol):
+            return flux / (np.pi * atol**2)  # Proper delta function approximation
         return 0.0
     
     def total_flux(self, nu: float) -> float:

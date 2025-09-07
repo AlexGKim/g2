@@ -52,12 +52,19 @@ class TestAbstractSource(unittest.TestCase):
         # Get analytical result from UniformDisk.V (overridden)
         V_analytic = self.disk.V(self.nu_0, self.baseline_short)
         
+        # Calculate zeta parameter: ζ = πρθ/λ
+        c = 2.99792458e8  # Speed of light
+        wavelength = c / self.nu_0
+        baseline_length = np.linalg.norm(self.baseline_short[:2])
+        theta = 2 * self.radius  # Angular diameter
+        zeta = np.pi * baseline_length * theta / wavelength
+        
         # They should agree within numerical precision (FFT has discretization errors)
         self.assertAlmostEqual(abs(V_fft), abs(V_analytic), places=1,
-                              msg=f"FFT: {abs(V_fft):.6f}, Analytic: {abs(V_analytic):.6f}")
+                              msg=f"ζ={zeta:.3f}: FFT={abs(V_fft):.6f}, Analytic={abs(V_analytic):.6f}")
         
     def test_V_vs_analytic_multiple_baselines(self):
-        """Test AbstractSource.V vs analytical for multiple baselines."""
+        """Test AbstractSource.V vs analytical for multiple baselines in zeta units."""
         baselines = [
             np.array([10.0, 0.0, 0.0]),
             np.array([50.0, 0.0, 0.0]),
@@ -66,14 +73,23 @@ class TestAbstractSource(unittest.TestCase):
             np.array([50.0, 50.0, 0.0])  # Diagonal baseline
         ]
         
+        # Physical constants
+        c = 2.99792458e8  # Speed of light
+        wavelength = c / self.nu_0
+        theta = 2 * self.radius  # Angular diameter
+        
         for baseline in baselines:
             with self.subTest(baseline=baseline):
                 V_fft = super(UniformDisk, self.disk).V(self.nu_0, baseline)
                 V_analytic = self.disk.V(self.nu_0, baseline)
                 
+                # Calculate zeta parameter: ζ = πρθ/λ
+                baseline_length = np.linalg.norm(baseline[:2])
+                zeta = np.pi * baseline_length * theta / wavelength
+                
                 # Allow for some numerical error in FFT method (discretization)
                 self.assertAlmostEqual(abs(V_fft), abs(V_analytic), places=1,
-                                      msg=f"Baseline {baseline}: FFT={abs(V_fft):.6f}, Analytic={abs(V_analytic):.6f}")
+                                      msg=f"ζ={zeta:.3f}: FFT={abs(V_fft):.6f}, Analytic={abs(V_analytic):.6f}")
 
 
 class TestChaoticSource(unittest.TestCase):
@@ -117,20 +133,20 @@ class TestChaoticSource(unittest.TestCase):
         self.assertAlmostEqual(abs(result), 1.0, places=10)
         
     def test_g2_minus_one_at_zero_delay(self):
-        """Test g2_minus_one at zero time delay equals 0 (since |g1(0)|² = 1, so |g1(0)|² - 1 = 0)."""
+        """Test g2_minus_one at zero time delay equals 1 (since g²(0) - 1 = |g1(0)|² = 1)."""
         result = self.point.g2_minus_one(self.delta_t_zero, self.nu_0, self.delta_nu)
-        self.assertAlmostEqual(result, 0.0, places=10)
+        self.assertAlmostEqual(result, 1.0, places=10)
         
-    def test_g2_minus_one_equals_g1_squared_minus_one(self):
-        """Test that g2_minus_one = |g1|² - 1."""
+    def test_g2_minus_one_equals_g1_squared(self):
+        """Test that g2_minus_one = |g1|² for chaotic sources."""
         for delta_t in [self.delta_t_zero, self.delta_t_small, self.delta_t_large]:
             with self.subTest(delta_t=delta_t):
                 g1 = self.point.g1(delta_t, self.nu_0, self.delta_nu)
                 g2_minus_one = self.point.g2_minus_one(delta_t, self.nu_0, self.delta_nu)
                 
-                expected = abs(g1)**2 - 1.0
+                expected = abs(g1)**2
                 self.assertAlmostEqual(g2_minus_one, expected, places=10,
-                                      msg=f"At Δt={delta_t}: g²-1={g2_minus_one}, |g¹|²-1={expected}")
+                                      msg=f"At Δt={delta_t}: g²-1={g2_minus_one}, |g¹|²={expected}")
                 
     def test_g1_sinc_behavior(self):
         """Test that g1 exhibits sinc behavior."""
@@ -275,38 +291,48 @@ class TestUniformDisk(unittest.TestCase):
         self.assertAlmostEqual(abs(result), 1.0, places=10)
         
     def test_V_airy_function(self):
-        """Test V implements correct Airy function."""
+        """Test V implements correct Airy function in zeta units."""
         from scipy.special import j1
         
         baseline = np.array([100.0, 0.0, 0.0])
         baseline_length = np.linalg.norm(baseline[:2])
         
-        # Calculate expected Airy function value
-        u = baseline_length / self.wavelength
-        x = 2 * np.pi * u * self.radius
+        # Calculate zeta parameter: ζ = πρθ/λ where θ is angular diameter
+        theta = 2 * self.radius  # Angular diameter
+        zeta = np.pi * baseline_length * theta / self.wavelength
         
-        if x == 0:
+        # Calculate expected Airy function value: V = 2J₁(ζ)/ζ
+        if zeta == 0:
             expected = 1.0
         else:
-            expected = 2 * j1(x) / x
+            expected = 2 * j1(zeta) / zeta
             
         result = self.disk.V(self.nu_0, baseline)
-        self.assertAlmostEqual(abs(result), abs(expected), places=10)
+        self.assertAlmostEqual(abs(result), abs(expected), places=10,
+                              msg=f"ζ={zeta:.3f}: Expected={expected:.6f}, Got={abs(result):.6f}")
         
     def test_V_first_zero(self):
-        """Test V first zero occurs at correct baseline."""
-        # First zero of Airy function: 2J₁(x)/x = 0 when x = 3.8317...
-        # This gives: 2πuθ = 3.8317, so u = 3.8317/(2πθ)
-        # Therefore: B = λu = λ × 3.8317/(2πθ) = 1.22λ/(2θ)
+        """Test V first zero occurs at correct zeta value."""
+        # First zero of Airy function: 2J₁(ζ)/ζ = 0 when ζ = 3.8317...
+        # For uniform disk: ζ = πρθ/λ where θ is angular diameter
         
-        first_zero_u = 3.8317 / (2 * np.pi * self.radius)
-        baseline_first_zero = first_zero_u * self.wavelength
+        first_zero_zeta = 3.8317  # First zero of 2J₁(ζ)/ζ
+        theta = 2 * self.radius  # Angular diameter
+        
+        # Calculate baseline length for first zero: ρ = ζλ/(πθ)
+        baseline_first_zero = first_zero_zeta * self.wavelength / (np.pi * theta)
         
         baseline = np.array([baseline_first_zero, 0.0, 0.0])
         result = self.disk.V(self.nu_0, baseline)
         
+        # Verify zeta calculation
+        calculated_zeta = np.pi * baseline_first_zero * theta / self.wavelength
+        
         # Should be very close to zero
-        self.assertLess(abs(result), 0.01)
+        self.assertLess(abs(result), 0.01,
+                       msg=f"ζ={calculated_zeta:.3f}: |V|={abs(result):.6f} should be ≈0")
+        self.assertAlmostEqual(calculated_zeta, first_zero_zeta, places=3,
+                              msg=f"Calculated ζ={calculated_zeta:.3f} should equal target ζ={first_zero_zeta:.3f}")
         
     def test_V_symmetry(self):
         """Test V is symmetric for different baseline orientations."""
@@ -326,6 +352,42 @@ class TestUniformDisk(unittest.TestCase):
         # All should be equal (symmetric disk)
         for i in range(1, len(results)):
             self.assertAlmostEqual(results[i], results[0], places=8)
+            
+    def test_V_zeta_parameter_scaling(self):
+        """Test visibility function scaling with zeta parameter."""
+        from scipy.special import j1
+        
+        # Test multiple zeta values by varying baseline length
+        zeta_targets = [0.5, 1.0, 2.0, 3.0, 3.8317, 5.0]  # Include first zero
+        theta = 2 * self.radius  # Angular diameter
+        
+        for zeta_target in zeta_targets:
+            with self.subTest(zeta=zeta_target):
+                # Calculate baseline length for target zeta: ρ = ζλ/(πθ)
+                baseline_length = zeta_target * self.wavelength / (np.pi * theta)
+                baseline = np.array([baseline_length, 0.0, 0.0])
+                
+                # Get visibility result
+                result = self.disk.V(self.nu_0, baseline)
+                
+                # Calculate expected Airy function value: V = 2J₁(ζ)/ζ
+                if zeta_target == 0:
+                    expected = 1.0
+                else:
+                    expected = 2 * j1(zeta_target) / zeta_target
+                
+                # Verify zeta calculation
+                calculated_zeta = np.pi * baseline_length * theta / self.wavelength
+                
+                self.assertAlmostEqual(calculated_zeta, zeta_target, places=6,
+                                      msg=f"Calculated ζ={calculated_zeta:.6f} should equal target ζ={zeta_target:.6f}")
+                self.assertAlmostEqual(abs(result), abs(expected), places=8,
+                                      msg=f"ζ={zeta_target:.3f}: |V|={abs(result):.6f}, Expected={abs(expected):.6f}")
+                
+                # Special check for first zero
+                if abs(zeta_target - 3.8317) < 0.001:
+                    self.assertLess(abs(result), 0.01,
+                                   msg=f"First zero at ζ={zeta_target:.3f}: |V|={abs(result):.6f} should be ≈0")
 
 
 class TestIntegration(unittest.TestCase):
@@ -369,7 +431,7 @@ class TestIntegration(unittest.TestCase):
                 
                 # All ChaoticSource instances should have temporal g1 method
                 g1_temporal = source.g1(delta_t, nu_0, delta_nu)
-                expected = abs(g1_temporal)**2 - 1.0
+                expected = abs(g1_temporal)**2
                 self.assertAlmostEqual(g2_minus_one, expected, places=10)
 
 
