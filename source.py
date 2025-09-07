@@ -72,12 +72,19 @@ class AbstractSource(ABC):
     Abstract base class for intensity sources I_nu(nu, n̂).
     
     This class defines the interface that all intensity source models must implement.
-    It provides both abstract methods that must be overridden and concrete methods
-    for visibility calculations that work with any intensity distribution.
-    
-    The class implements the mathematical framework for intensity interferometry
-    where the key quantity is the specific intensity I_nu(nu, n̂) as a function
-    of frequency nu and sky direction n̂.
+
+    Spatial coherence, given by the method visibility, depends on the specific
+    intensity I_nu(nu, n̂) as a function of frequency nu and sky direction n̂.  Implemented
+    is a concrete method
+    for the visibility calculations that works with any intensity profile.
+
+    Temporal coherence is given by the g2_minus_one method, which corresponds to
+    the correlation in count excess.  Tne intensity interferometry
+    observable is related to g²(Δt) - 1 though Eq. 3 in Dalal et al.
+    It is implemented as an abstract method to be overridden by
+    subclasses.  For chaotic (thermal) sources, a concrete implementation is provided
+    in the ChaoticSource subclass as g²(Δt) - 1 = |g¹(Δt)|².
+
     
     Methods to Implement
     -------------------
@@ -87,7 +94,7 @@ class AbstractSource(ABC):
     
     Provided Methods
     ---------------
-    visibility : Calculate fringe visibility using FFT (works for any intensity distribution)
+    V : Calculate fringe visibility using FFT (works for any intensity distribution)
     """
     
     @abstractmethod
@@ -186,7 +193,7 @@ class AbstractSource(ABC):
         where I₀ = ⟨I(t)⟩ is the mean intensity.
         
         For intensity interferometry, the key relation is:
-            g²(Δt) - 1 = |V(B)|²
+            g²(Δt) - 1 = |g^1(Δt)|²
         
         where V(B) is the spatial visibility function (Equation 8). This connects
         the temporal correlations measured by g² to the spatial structure of the
@@ -198,10 +205,10 @@ class AbstractSource(ABC):
         """
         pass
     
-    def visibility(self, nu_0: float, baseline: np.ndarray,
-                   grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
+    def V(self, nu_0: float, baseline: np.ndarray,
+          grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
         """
-        Calculate the spatial visibility function.
+        Calculate the spatial visibility function V.
         
         Computes the normalized spatial Fourier transform of the intensity distribution
         as defined in Equation 8 of the PhysRev paper:
@@ -230,7 +237,7 @@ class AbstractSource(ABC):
             
         Returns
         -------
-        visibility : complex
+        V : complex
             Normalized fringe visibility. The magnitude gives the visibility
             amplitude, and the phase gives the visibility phase.
             
@@ -250,7 +257,7 @@ class AbstractSource(ABC):
         >>> source = UniformDisk(flux_density=1e-26, radius=1e-8)
         >>> baseline = np.array([100.0, 0.0, 0.0])  # 100m E-W
         >>> nu_0 = 5e14  # 600 nm
-        >>> vis = source.visibility(nu_0, baseline)
+        >>> vis = source.V(nu_0, baseline)
         >>> print(f"Visibility: {vis:.3f}")
         """
         # Physical constants
@@ -367,7 +374,7 @@ class ChaoticSource(AbstractSource):
     ---------------
     g1 : Calculate first-order temporal coherence function (implemented)
     g2_minus_one : Calculate second-order temporal coherence function minus one (implemented)
-    visibility : Calculate fringe visibility using FFT (inherited)
+    V : Calculate fringe visibility using FFT (inherited)
     """
     
     def g1(self, delta_t: float, nu_0: float, delta_nu: float) -> complex:
@@ -563,10 +570,10 @@ class PointSource(ChaoticSource):
         """
         return self.flux_function(nu)
     
-    def visibility(self, nu_0: float, baseline: np.ndarray,
-                   grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
+    def V(self, nu_0: float, baseline: np.ndarray,
+          grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
         """
-        Analytical visibility for point source.
+        Analytical visibility function V for point source.
         
         For a point source, the Fourier transform of a delta function is
         a constant, so the normalized visibility is always 1.0 regardless
@@ -585,7 +592,7 @@ class PointSource(ChaoticSource):
             
         Returns
         -------
-        visibility : complex
+        V : complex
             Always returns 1.0 + 0.0j for point source.
         """
         return 1.0 + 0.0j
