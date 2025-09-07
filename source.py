@@ -463,7 +463,7 @@ class ChaoticSource(AbstractSource):
         """
         # Calculate g²(Δt) - 1 = |g¹(Δt)|²
         g1_value = self.g1(delta_t, nu_0, delta_nu)
-        return abs(g1_value)**2
+        return abs(g1_value)**2 -1.0
 
 
 class PointSource(ChaoticSource):
@@ -688,15 +688,15 @@ class UniformDisk(ChaoticSource):
         """
         return self.flux_density
     
-    def visibility(self, nu_0: float, baseline: np.ndarray,
-                   grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
+    def g1(self, nu_0: float, baseline: np.ndarray,
+           grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
         """
-        Analytical visibility for uniform disk.
+        Analytical first-order coherence function for uniform disk.
         
-        For a uniform circular disk, the normalized visibility is given by
-        the Airy function:
+        For a uniform circular disk, the normalized first-order coherence function
+        is given by the Airy function:
         
-            V(u) = 2J₁(2πuθ) / (2πuθ)
+            g¹(u) = 2J₁(2πuθ) / (2πuθ)
         
         where J₁ is the first-order Bessel function, u = |B_⊥|/λ is the
         spatial frequency, and θ is the disk radius.
@@ -714,8 +714,8 @@ class UniformDisk(ChaoticSource):
             
         Returns
         -------
-        visibility : complex
-            Normalized visibility (real-valued for symmetric disk).
+        g1 : complex
+            Normalized first-order coherence function (real-valued for symmetric disk).
             
         Notes
         -----
@@ -723,7 +723,7 @@ class UniformDisk(ChaoticSource):
         in the limit of fine grid sampling. It's much faster than the FFT
         method and doesn't suffer from discretization artifacts.
         
-        The first zero of the visibility function occurs at:
+        The first zero of the coherence function occurs at:
             u = 1.22/(2θ)  or  |B_⊥| = 1.22λ/(2θ)
         
         This corresponds to the classical resolution limit for circular apertures.
@@ -746,10 +746,10 @@ class UniformDisk(ChaoticSource):
         
         # Handle special case x=0 (zero baseline or zero radius)
         if x == 0:
-            visibility = 1.0
+            g1_value = 1.0
         else:
-            # Airy function: V(u) = 2J₁(x)/x
-            visibility = 2 * j1(x) / x
+            # Airy function: g¹(u) = 2J₁(x)/x
+            g1_value = 2 * j1(x) / x
         
         # Return as complex number (phase is zero for symmetric disk)
-        return visibility + 0.0j
+        return g1_value + 0.0j
