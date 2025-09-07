@@ -382,9 +382,17 @@ class ChaoticSource(AbstractSource):
         Calculate first-order temporal coherence function for chaotic light.
         
         For chaotic (thermal) sources, the first-order coherence function g¹(Δt)
-        exhibits sinc behavior arising from the Fourier transform of the rectangular
-        spectral window. This is the fundamental coherence function from which
-        higher-order correlations are derived.
+        is the Fourier Transform of the spectrum by the Wiener-Khinchin theorem.
+        Practically we are interested in the coherence function through an observational
+        pass band.  In cases where the spectrum can be approximated as constant within
+        a rectangular spectral window. the Fourier transform of the tophat function which
+        gives the sinc function.
+
+        g1(Δt) = sinc(π × Δν × Δt)
+
+        g¹(Δt) is fundamental to the second-order correlations measured in
+        intensity interferometry through the relation g²(Δt) - 1 = |g¹(Δt)|²
+        for chaotic light.
         
         Parameters
         ----------
@@ -695,15 +703,15 @@ class UniformDisk(ChaoticSource):
         """
         return self.flux_density
     
-    def g1(self, nu_0: float, baseline: np.ndarray,
-           grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
+    def V(self, nu_0: float, baseline: np.ndarray,
+          grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
         """
-        Analytical first-order coherence function for uniform disk.
+        Analytical visibility function V for uniform disk.
         
-        For a uniform circular disk, the normalized first-order coherence function
+        For a uniform circular disk, the normalized visibility function
         is given by the Airy function:
         
-            g¹(u) = 2J₁(2πuθ) / (2πuθ)
+            V(u) = 2J₁(2πuθ) / (2πuθ)
         
         where J₁ is the first-order Bessel function, u = |B_⊥|/λ is the
         spatial frequency, and θ is the disk radius.
@@ -721,8 +729,8 @@ class UniformDisk(ChaoticSource):
             
         Returns
         -------
-        g1 : complex
-            Normalized first-order coherence function (real-valued for symmetric disk).
+        V : complex
+            Normalized visibility function (real-valued for symmetric disk).
             
         Notes
         -----
@@ -730,7 +738,7 @@ class UniformDisk(ChaoticSource):
         in the limit of fine grid sampling. It's much faster than the FFT
         method and doesn't suffer from discretization artifacts.
         
-        The first zero of the coherence function occurs at:
+        The first zero of the visibility function occurs at:
             u = 1.22/(2θ)  or  |B_⊥| = 1.22λ/(2θ)
         
         This corresponds to the classical resolution limit for circular apertures.
@@ -753,10 +761,10 @@ class UniformDisk(ChaoticSource):
         
         # Handle special case x=0 (zero baseline or zero radius)
         if x == 0:
-            g1_value = 1.0
+            V_value = 1.0
         else:
-            # Airy function: g¹(u) = 2J₁(x)/x
-            g1_value = 2 * j1(x) / x
+            # Airy function: V(u) = 2J₁(x)/x
+            V_value = 2 * j1(x) / x
         
         # Return as complex number (phase is zero for symmetric disk)
-        return g1_value + 0.0j
+        return V_value + 0.0j
