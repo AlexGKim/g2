@@ -143,7 +143,7 @@ class AbstractIntensitySource(ABC):
         return np.abs(visibility)**2
     
     def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
-                                    grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
+                                    grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
         """
         Calculate simplified fringe visibility (Equation 8 without time dependence)
         
@@ -573,134 +573,6 @@ class IntensityInterferometry:
         return 1.0 / sigma_inv if sigma_inv > 0 else np.inf
 
 
-class FactorizedVisibility:
-    """
-    Handle factorized visibility for narrow bandwidth sources - Equations (7-8)
-    Uses FFT-based methods for efficient calculation.
-    """
-    
-    def __init__(self, source: AbstractIntensitySource, grid_size: int = 128,
-                 sky_extent: float = 1e-4):
-        """
-        Parameters:
-        -----------
-        source : AbstractIntensitySource
-            Source model
-        grid_size : int, optional
-            Size of FFT grid (default: 512)
-        sky_extent : float, optional
-            Angular extent of sky grid [radians] (default: 1e-4)
-        """
-        self.source = source
-        self.c = 2.99792458e8
-        self.grid_size = grid_size
-        self.sky_extent = sky_extent
-        self.pixel_scale = sky_extent / grid_size
-        
-        # Set up coordinate grids
-        coords_1d = np.linspace(-sky_extent/2, sky_extent/2, grid_size)
-        self.sky_x, self.sky_y = np.meshgrid(coords_1d, coords_1d)
-    
-    def _get_intensity_grid(self, nu: float) -> np.ndarray:
-        """Get intensity on sky grid"""
-        intensity_grid = np.zeros((self.grid_size, self.grid_size))
-        n_hat_array = np.stack([self.sky_x.ravel(), self.sky_y.ravel()], axis=1)
-        
-        for i, n_hat in enumerate(n_hat_array):
-            intensity_grid.ravel()[i] = self.source.intensity(nu, n_hat)
-        
-        return intensity_grid
-    
-    def spatial_visibility(self, nu_0: float, baseline_perp: np.ndarray) -> complex:
-        """
-        Calculate spatial visibility V̄(ν₀,B) using FFT - Equation (8)
-        
-        V̄(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
-        
-        Parameters:
-        -----------
-        nu_0 : float
-            Central frequency [Hz]
-        baseline_perp : array_like, shape (2,)
-            Perpendicular baseline component [m]
-            
-        Returns:
-        --------
-        visibility : complex
-            Spatial visibility
-        """
-        # Get intensity distribution
-        intensity_grid = self._get_intensity_grid(nu_0)
-        
-        # Calculate wavelength
-        lambda_0 = self.c / nu_0
-        
-        # Compute FFT
-        intensity_fft = fft2(intensity_grid)
-        intensity_fft = fftshift(intensity_fft)
-        
-        # Normalize by total flux
-        pixel_area = self.pixel_scale**2
-        total_flux = np.sum(intensity_grid) * pixel_area
-        
-        if total_flux > 0:
-            intensity_fft *= pixel_area / total_flux
-        
-        # Convert baseline to spatial frequency
-        u_freq = baseline_perp[0] / lambda_0 if len(baseline_perp) > 0 else 0.0
-        v_freq = baseline_perp[1] / lambda_0 if len(baseline_perp) > 1 else 0.0
-        
-        # Convert to grid indices
-        freq_resolution = 1.0 / self.sky_extent
-        u_idx = u_freq / freq_resolution + self.grid_size // 2
-        v_idx = v_freq / freq_resolution + self.grid_size // 2
-        
-        # Interpolate at desired frequency
-        return self._bilinear_interpolate(intensity_fft, u_idx, v_idx)
-    
-    def _bilinear_interpolate(self, grid: np.ndarray, x: float, y: float) -> complex:
-        """Bilinear interpolation on complex grid"""
-        if (x < 0 or x >= self.grid_size - 1 or
-            y < 0 or y >= self.grid_size - 1):
-            return 0.0 + 0.0j
-        
-        x0, x1 = int(x), min(int(x) + 1, self.grid_size - 1)
-        y0, y1 = int(y), min(int(y) + 1, self.grid_size - 1)
-        
-        fx = x - int(x)
-        fy = y - int(y)
-        
-        value = (grid[y0, x0] * (1 - fx) * (1 - fy) +
-                grid[y0, x1] * fx * (1 - fy) +
-                grid[y1, x0] * (1 - fx) * fy +
-                grid[y1, x1] * fx * fy)
-        
-        return value
-    
-    def temporal_factor(self, delta_nu: float, delta_t: float) -> complex:
-        """
-        Calculate temporal factor from Equation (7)
-        
-        sinc(ΔωΔt/2) * exp(-iω₀Δt)
-        
-        Parameters:
-        -----------
-        delta_nu : float
-            Bandwidth [Hz]
-        delta_t : float
-            Time lag [s]
-            
-        Returns:
-        --------
-        factor : complex
-            Temporal factor
-        """
-        delta_omega = 2 * np.pi * delta_nu
-        sinc_factor = np.sinc(delta_omega * delta_t / (2 * np.pi))
-        # Note: assuming ω₀Δt term is absorbed in redefinition as mentioned in paper
-        return sinc_factor
-
-
 # Example source implementations
 class PointSource(AbstractIntensitySource):
     """Point source at origin"""
@@ -724,24 +596,15 @@ class PointSource(AbstractIntensitySource):
         return self.flux_density
     
     
-    def simplified_visibility(self, nu_0: float, baseline: np.ndarray,
-                             grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+    def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
+                                   grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
         """
-        Analytical simplified visibility for point source (numerator of Equation 8)
+        Analytical simplified fringe visibility for point source
         
-        For a point source, this equals the total flux
+        For a point source, the normalized visibility is always 1.0 (constant)
+        since the Fourier transform of a delta function is a constant.
         """
-        return self.flux_density + 0.0j
-    
-    def normalized_fringe_visibility(self, nu_0: float, delta_nu: float,
-                                   baseline: np.ndarray, delta_t: float = 0.0,
-                                   grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
-        """
-        Analytical normalized fringe visibility for point source - Equation (2)
-        
-        For a point source with constant flux, the normalized visibility equals the visibility
-        """
-        return self.visibility(nu_0, baseline, delta_t, grid_size, sky_extent)
+        return 1.0 + 0.0j
 
 
 class UniformDisk(AbstractIntensitySource):
@@ -767,16 +630,13 @@ class UniformDisk(AbstractIntensitySource):
     def total_flux(self, nu: float) -> float:
         return self.flux_density
     
-    def simplified_visibility(self, nu_0: float, baseline: np.ndarray,
-                             grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+    def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
+                                   grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
         """
-        Analytic simplified visibility for uniform disk using Airy function
+        Analytic simplified fringe visibility for uniform disk (normalized)
         
-        For a uniform disk, the visibility is the Airy function:
-        V(u) = 2 * J₁(2πuθ) / (2πuθ) ≈ sin(2πuθ) / (2πuθ)
-        
-        where u = |B_⊥|/λ is the spatial frequency and θ is the angular radius
-        Using the approximation J₁(x) ≈ sin(x)/x for the Airy pattern
+        This is the normalized version: V_simple(ν₀,B) = V(ν₀,B) / F_total
+        Returns the proper Airy function for direct comparison with FFT method.
         
         Parameters:
         -----------
@@ -791,9 +651,11 @@ class UniformDisk(AbstractIntensitySource):
             
         Returns:
         --------
-        visibility : complex
-            Analytic simplified visibility (unnormalized)
+        normalized_visibility : complex
+            Normalized simplified fringe visibility
         """
+        from scipy.special import j1
+        
         # Calculate wavelength
         c = 2.99792458e8
         wavelength = c / nu_0
@@ -812,9 +674,8 @@ class UniformDisk(AbstractIntensitySource):
         if x == 0:
             visibility = 1.0
         else:
-            # Airy function using sin approximation: V(u) ≈ sin(x) / x
-            visibility = np.sin(x) / x
+            # Proper Airy function: V(u) = 2*J₁(x) / x
+            visibility = 2 * j1(x) / x
         
-        # Return unnormalized visibility (multiply by total flux)
-        # This gives the numerator of Equation 8
-        return visibility * self.flux_density + 0.0j
+        # Return normalized visibility (this is what simplified_fringe_visibility should return)
+        return visibility + 0.0j
