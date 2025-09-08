@@ -65,26 +65,25 @@ from scipy.integrate import quad, dblquad
 from scipy.fft import fft2, ifft2, fftfreq, fftshift, ifftshift
 from scipy.interpolate import RegularGridInterpolator
 from dataclasses import dataclass
-
+import astropy.constants
 
 class AbstractSource(ABC):
     """
-    Abstract base class for intensity sources I_nu(nu, n̂).
+    Abstract base class for intensity sources described by I_nu(nu, n̂).
     
-    This class defines the interface that all intensity source models must implement.
+    Spatial coherence is described by visibility V, which depends on the specific
+    intensity I_nu(nu, n̂) as a function of frequency nu and sky direction n̂. A
+    concrete method is implemented for the visibility calculations that works with
+    any intensity profile.
 
-    Spatial coherence, given by the method visibility, depends on the specific
-    intensity I_nu(nu, n̂) as a function of frequency nu and sky direction n̂.  Implemented
-    is a concrete method
-    for the visibility calculations that works with any intensity profile.
-
-    Temporal coherence is given by the g2_minus_one method, which corresponds to
-    the correlation in count excess.  Tne intensity interferometry
-    observable is related to g²(Δt) - 1 though Eq. 3 in Dalal et al.
-    It is implemented as an abstract method to be overridden by
-    subclasses.  For chaotic (thermal) sources, a concrete implementation is provided
-    in the ChaoticSource subclass as g²(Δt) - 1 = |g¹(Δt)|².
-
+    Temporal coherence is described by the second order coherence g^2(nu, delta_t)
+    which must be specified by subclasses.  g²(Δt) - 1 is directly related to the
+    HBT obserable, the correlation in light intensity as a function of time lag.
+    Its integral over all time lags gives the signal given in Eq. 3 in Dalal et al.
+    g^2(nu, delta_t), or specifically the g2_minus_one method, is implemented as an
+    abstract method to be overridden by subclasses.  For example, chaotic (thermal)
+    sources, a concrete implementation is provided in the ChaoticSource subclass as
+    g²(Δt) - 1 = |g¹(Δt)|².
     
     Methods to Implement
     -------------------
@@ -165,7 +164,11 @@ class AbstractSource(ABC):
         
         This method computes g²(Δt) - 1, which directly represents the excess
         correlation above the uncorrelated baseline. This quantity is fundamental
-        to intensity interferometry as it equals |V(B)|² for chaotic sources.
+        to intensity interferometry and it equals |V(B)|² for chaotic sources.
+
+        Usually we are interested in the coherence function through an observational
+        setup with a finite bandwidth.  The bandwidth is described by a tophat function
+        centered at frequency nu_0 with width delta_nu.
         
         Parameters
         ----------
@@ -209,16 +212,12 @@ class AbstractSource(ABC):
           grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
         """
         Calculate the spatial visibility function V.
-        
-        Computes the normalized spatial Fourier transform of the intensity distribution
-        as defined in Equation 8 of the PhysRev paper:
-        
             V(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
         
-        This represents the spatial part of the complex first-order coherence function
-        and is the fundamental quantity that determines the fringe visibility in
-        intensity interferometry measurements. The calculation uses FFT with proper
-        grid setup and normalization to accurately approximate the continuous Fourier transform.
+        Equation 8 in Dalal et al. 2024 (arXiv:2403.15903v1).
+
+        The general implmentation The uses FFT with to accurately approximate
+        the continuous Fourier transform.
         
         Parameters
         ----------
@@ -261,7 +260,7 @@ class AbstractSource(ABC):
         >>> print(f"Visibility: {vis:.3f}")
         """
         # Physical constants
-        c = 2.99792458e8  # Speed of light in m/s
+        c = astropy.constants.c.mks #2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
         
         # Extract perpendicular baseline components (ignore Bz)
@@ -359,9 +358,9 @@ class ChaoticSource(AbstractSource):
     the spectral power distribution within the measurement bandwidth.
     
     The g² function is implemented as:
-        g²(ν₀, Δν) = F(ν₀) × FT[tophat(ν₀, Δν)]
+        g²(ν₀, Δν) = FT[tophat(ν₀, Δν)]/Δν
     
-    where F(ν₀) is the flux at the central frequency and FT[tophat] is the
+    where FT[tophat] is the
     Fourier transform of the rectangular (tophat) function defined by the
     central frequency and bandwidth.
     
@@ -616,7 +615,7 @@ class PointSource(ChaoticSource):
             Visibility function: exp(2πi B_⊥ · n̂₀ / λ) where n̂₀ = [0,0].
         """
         # Physical constants
-        c = 2.99792458e8  # Speed of light in m/s
+        c = astropy.constants.c.mks #2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
         
         # Extract perpendicular baseline components (ignore Bz)
@@ -770,7 +769,7 @@ class UniformDisk(ChaoticSource):
         from scipy.special import j1
         
         # Physical constants
-        c = 2.99792458e8  # Speed of light in m/s
+        c = astropy.constants.c.mks #2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
         
         # Extract perpendicular baseline components

@@ -9,6 +9,7 @@ import numpy as np
 from typing import Union
 import sys
 import os
+import sncosmo
 
 # Add parent directory to path to import source module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,7 +26,7 @@ class SedonaSN2011feSource(ChaoticSource):
     """
     
     def __init__(self, wave_grid_file: str = "../data/WaveGrid.npy",
-                 flux_file: str = "../data/Phase0Flux.npy"):
+                 flux_file: str = "../data/Phase0Flux.npy", B: float=12):
         """
         Initialize Sedona SN2011fe source
         
@@ -39,13 +40,22 @@ class SedonaSN2011feSource(ChaoticSource):
         """
         # Load the data files
         try:
-            self.wavelength_grid = np.load(wave_grid_file)  # [Angstrom]
-            self.flux_data_3d = np.load(flux_file)  # [erg/s/cm²/Å] - 3D array
+            self.wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
+            self.flux_data_3d = np.flip(np.load(flux_file),axis=0)  # [erg/s/cm²/Å] - 3D array
+
+
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Could not load Sedona data files: {e}")
         
         # Get spatial dimensions
         self.n_wavelengths, self.nx, self.ny = self.flux_data_3d.shape
+        
+        # Normalize to 
+        if B is not None:
+            flux_int = self.flux_data_3d.sum(axis=(1,2))
+            spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
+            spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
+            self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
         
         # Convert wavelength to frequency
         c = 2.99792458e8  # m/s
