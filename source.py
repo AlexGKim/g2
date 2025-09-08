@@ -521,7 +521,7 @@ class PointSource(ChaoticSource):
     >>> print(f"Visibility: {abs(vis):.3f}")  # Should be 1.000
     """
     
-    def __init__(self, flux_function: Callable[[float], float]):
+    def __init__(self, flux_function: Callable[[float], float], position: np.ndarray = None):
         """
         Initialize point source.
         
@@ -530,8 +530,12 @@ class PointSource(ChaoticSource):
         flux_function : callable
             Function that returns flux density as a function of frequency.
             Should accept frequency in Hz and return flux in W m⁻² Hz⁻¹.
+        position : array_like, shape (2,), optional
+            Position of the point source on the sky in radians [theta_x, theta_y].
+            Default is [0, 0] (at the origin).
         """
         self.flux_function = flux_function
+        self.position = np.array([0.0, 0.0]) if position is None else np.array(position)
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, atol: float = 1e-10) -> Union[float, np.ndarray]:
         """
@@ -539,7 +543,7 @@ class PointSource(ChaoticSource):
         
         For numerical implementation, the delta function is approximated by
         returning the flux divided by the area of a small circle when n̂ is
-        very close to the origin.
+        very close to the source position.
         
         Parameters
         ----------
@@ -563,7 +567,7 @@ class PointSource(ChaoticSource):
             flux = np.array([self.flux_function(f) for f in nu])
         
         # Approximate delta function - flux divided by circle area within atol
-        if np.allclose(n_hat, [0, 0], atol=atol):
+        if np.allclose(n_hat, self.position, atol=atol):
             return flux / (np.pi * atol**2)  # Proper delta function approximation
         return 0.0
     
@@ -586,18 +590,21 @@ class PointSource(ChaoticSource):
     def V(self, nu_0: float, baseline: np.ndarray,
           grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
         """
-        Analytical visibility function V for point source.
+        Analytical visibility function V for point source at origin.
         
-        For a point source, the Fourier transform of a delta function is
-        a constant, so the normalized visibility is always 1.0 regardless
-        of baseline length or orientation.
+        For a point source at the origin, the visibility function is:
+            V(B) = exp(2πi B_⊥ · 0 / λ) = 1.0 + 0.0j
+        
+        However, the proper form should include the exponential phase structure
+        even though it evaluates to 1 for a source at the origin.
         
         Parameters
         ----------
         nu_0 : float
-            Central frequency in Hz (not used).
+            Central frequency in Hz. Determines the wavelength λ = c/ν₀.
         baseline : array_like, shape (3,)
-            Baseline vector in meters (not used).
+            Baseline vector in meters [Bx, By, Bz]. Only perpendicular
+            components (Bx, By) are used.
         grid_size : int, optional
             Grid size (not used, kept for interface compatibility).
         sky_extent : float, optional
@@ -606,9 +613,21 @@ class PointSource(ChaoticSource):
         Returns
         -------
         V : complex
-            Always returns 1.0 + 0.0j for point source.
+            Visibility function: exp(2πi B_⊥ · n̂₀ / λ) where n̂₀ = [0,0].
         """
-        return 1.0 + 0.0j
+        # Physical constants
+        c = 2.99792458e8  # Speed of light in m/s
+        wavelength = c / nu_0
+        
+        # Extract perpendicular baseline components (ignore Bz)
+        baseline_perp = baseline[:2]
+        
+        # For point source at origin: n̂₀ = [0, 0]
+        # Calculate phase: 2π B_⊥ · n̂₀ / λ = 2π B_⊥ · [0,0] / λ = 0
+        phase = 0.0
+        
+        # Return complex exponential: exp(i * 0) = 1.0 + 0.0j
+        return np.exp(1j * phase)
 
 
 class UniformDisk(ChaoticSource):
