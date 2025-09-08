@@ -17,7 +17,7 @@ import os
 import tempfile
 
 # Add sources directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'sources'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 try:
     from sources.sn2011fe_sedona import SedonaSN2011feSource

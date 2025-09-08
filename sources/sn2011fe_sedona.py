@@ -23,13 +23,17 @@ class SedonaSN2011feSource(ChaoticSource):
     This class implements a point source model where the intensity
     is concentrated at the origin with frequency-dependent flux
     from the Sedona simulation data.
+
+
     """
     
     def __init__(self, wave_grid_file: str = "../data/WaveGrid.npy",
-                 flux_file: str = "../data/Phase0Flux.npy", B: float=12):
+                 flux_file: str = "../data/Phase0Flux.npy", B: float = 9.98, distance: float = 204379200000000.0 ):
         """
         Initialize Sedona SN2011fe source
         
+        The underlying model is in physical units.  The flux and angular size are normalized to observed values.
+
         Parameters:
         -----------
         wave_grid_file : str
@@ -43,19 +47,21 @@ class SedonaSN2011feSource(ChaoticSource):
             self.wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
             self.flux_data_3d = np.flip(np.load(flux_file),axis=0)  # [erg/s/cm²/Å] - 3D array
 
-
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Could not load Sedona data files: {e}")
         
         # Get spatial dimensions
         self.n_wavelengths, self.nx, self.ny = self.flux_data_3d.shape
         
-        # Normalize to 
-        if B is not None:
-            flux_int = self.flux_data_3d.sum(axis=(1,2))
-            spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
-            spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
-            self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
+        # normalize angular scale
+        self.length_scale = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days) as per Nov 25 email from XingZhuo
+        self.pixel_scale = self.length_scale / distance # radians per pixel
+
+        # normalize flux scale
+        flux_int = self.flux_data_3d.sum(axis=(1,2))
+        spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
+        spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
+        self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
         
         # Convert wavelength to frequency
         c = 2.99792458e8  # m/s
@@ -154,7 +160,7 @@ class SedonaSN2011feSource(ChaoticSource):
             intensity_map_si = intensity_map * 1e-7 / 1e-4 * 1e-10 * (wavelength_m**2) / c
             
             # Convert to intensity per steradian
-            pixel_scale = 1e-6  # radians per pixel (adjustable)
+            pixel_scale = self.pixel_scale  # radians per pixel (adjustable)
             pixel_solid_angle = pixel_scale**2  # steradians per pixel
             intensity_map_si /= pixel_solid_angle
             
