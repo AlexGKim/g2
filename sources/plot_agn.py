@@ -21,10 +21,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
+    # Set backend after import
+    plt.switch_backend('Agg')
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     print("Warning: matplotlib not available - will create documentation instead")
@@ -220,12 +220,18 @@ def plot_visibility_characteristics():
         if not sources:
             raise Exception("Could not create test sources")
         
-        nu_0 = 5e14  # 600 nm
+
         c = 2.99792458e8
+        nu_0 = c / 5500e-10  # 600 nm
         wavelength = c / nu_0
         
-        # Plot 1: Visibility vs baseline length
-        baseline_lengths = np.logspace(2.5, 6, 100)  # 10 m to 10 km
+        # Plot 1: Visibility vs baseline length (showing oscillatory behavior like Fig 1 in PhysRev paper)
+        # Calculate the characteristic baseline where minimum should occur
+        ss_disk = sources['ss_disk']
+        B_min_expected = wavelength * ss_disk.distance / (2 * np.pi * ss_disk.R_in * ss_disk.GM_over_c2)
+        
+        # Create log-scale baseline range from 0.5 to 1000 km like Fig 1 in the paper
+        baseline_lengths = np.logspace(np.log10(500), np.log10(1000000), 500)  # 0.5 to 1000 km in meters
         
         for name, source in sources.items():
             if name == 'blr':
@@ -236,20 +242,25 @@ def plot_visibility_characteristics():
                 baseline = np.array([B, 0.0, 0.0])
                 try:
                     vis = source.V(nu_0, baseline)
-                    visibilities.append(abs(vis))
+                    visibilities.append(abs(vis)**2)  # Plot |V|² like in Fig 1
                 except Exception as e:
                     print(e)
                     visibilities.append(0.0)
             
             label = 'Shakura-Sunyaev' if name == 'ss_disk' else 'Relativistic'
-            ax1.semilogx(baseline_lengths, visibilities, linewidth=2, label=label)
+            ax1.loglog(baseline_lengths/1000, visibilities, linewidth=2, label=label)  # Log-log plot in km
         
-        ax1.set_xlabel('Baseline Length (m)')
-        ax1.set_ylabel('|V(B)|')
-        ax1.set_title('Visibility vs Baseline Length')
+        # Mark the expected minimum location (convert to km)
+        ax1.axvline(x=B_min_expected/1000, color='red', linestyle=':', alpha=0.7,
+                   label=f'λD/(2πR_in) = {B_min_expected/1000:.1f} km')
+        
+        ax1.set_xlabel('Baseline Length (km)')
+        ax1.set_ylabel('|V(B)|²')
+        ax1.set_title('Squared Visibility vs Baseline Length (Log Scale)')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
-        ax1.set_ylim(0, 1.1)
+        ax1.set_xlim(0.5, 1000)
+        ax1.set_ylim(1e-6, 1.1)
         
         # Plot 2: Visibility vs zeta for SS disk
         ss_disk = sources['ss_disk']
@@ -578,7 +589,7 @@ def plot_relativistic_effects():
 def create_documentation_fallback():
     """Create documentation when plotting fails"""
     try:
-        with open('sources/plot_agn_description.txt', 'w') as f:
+        with open('plot_agn_description.txt', 'w') as f:
             f.write("AGN Source Models - Comprehensive Test Plots\n")
             f.write("=" * 50 + "\n\n")
             
@@ -638,7 +649,7 @@ def main():
         return
     
     try:
-        with PdfPages('sources/plot_agn.pdf') as pdf:
+        with PdfPages('plot_agn.pdf') as pdf:
             print("1. Creating intensity profile plots...")
             fig1 = plot_intensity_profiles()
             if fig1:
@@ -671,7 +682,7 @@ def main():
             d['Keywords'] = 'AGN, Accretion Disk, BLR, Relativistic, Visibility, Intensity'
             d['Creator'] = 'plot_agn.py'
         
-        print("\n✅ All AGN plots saved to sources/plot_agn.pdf!")
+        print("\n✅ All AGN plots saved to plot_agn.pdf!")
         print("\nThe PDF contains 4 pages with comprehensive visualizations:")
         print("1. Intensity profiles for different AGN models")
         print("2. Visibility characteristics including zeta plots")
