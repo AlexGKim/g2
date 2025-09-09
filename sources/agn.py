@@ -3,16 +3,24 @@ Simplified AGN Source Models for Intensity Interferometry
 
 Streamlined implementation focusing on computational efficiency
 while maintaining the simplified integration method.
+
+All AGN source models now inherit from ChaoticSource to provide
+proper temporal coherence functions for intensity interferometry.
 """
 
 import numpy as np
 import scipy.special as sp
-from scipy.integrate import quad
+from scipy.integrate import quad, dblquad
 from typing import Union, Tuple, Optional
-from intensity_interferometry_core import AbstractIntensitySource
+import sys
+import os
+
+# Add parent directory to path to import source module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from source import ChaoticSource
 
 
-class ShakuraSunyaevDisk(AbstractIntensitySource):
+class ShakuraSunyaevDisk(ChaoticSource):
     """
     Simplified Shakura-Sunyaev accretion disk model - Equations (21-22)
     
@@ -20,10 +28,11 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
     f(R) = (ν/ν₀(R)) = [(R₀/R)^n (1 - √(R_in/R))]^(-1/4)
     
     Uses simplified integration for efficient visibility calculations.
+    Inherits temporal coherence functions from ChaoticSource.
     """
     
     def __init__(self, I_0: float, R_0: float, R_in: float, n: float = 3.0, 
-                 inclination: float = 0.0, distance: float = 1.0, 
+                 inclination: float = 0.0, phi_B: float = 0.0, distance: float = 1.0, 
                  GM_over_c2: float = 1.0):
         """
         Parameters:
@@ -38,6 +47,8 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
             Power law index (default: 3.0 for standard SS disk)
         inclination : float, optional
             Disk inclination angle [radians]
+        phi_B : float, optional
+            Position angle of disk [radians]
         distance : float, optional
             Distance to source [m]
         GM_over_c2 : float, optional
@@ -48,12 +59,16 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         self.R_in = R_in
         self.n = n
         self.inclination = inclination
+        self.phi_B = phi_B
         self.distance = distance
         self.GM_over_c2 = GM_over_c2
         
         # Precompute cos(i) for efficiency
         self.cos_i = np.cos(inclination)
         self.sin_i = np.sin(inclination)
+
+        self.cos_phi_B = np.cos(phi_B)
+        self.sin_phi_B = np.sin(phi_B)  
     
     def _f_function(self, R: float) -> float:
         """Calculate f(R) from Equation (22)"""
@@ -70,10 +85,16 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
             return 0.0
         
         f_val = self._f_function(R)
+    
         if f_val == np.inf:
             return 0.0
         
-        return self.I_0 / (np.exp(f_val) - 1)
+        try:    
+            exp_f = np.exp(f_val)
+        except OverflowError:
+            return 0.0
+        
+        return self.I_0 / (exp_f - 1)
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
         """
@@ -93,16 +114,18 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         """
         # Convert sky coordinates to disk coordinates
         x, y = n_hat[0], n_hat[1]
+
+        # # Calculate coordinates in disk plane
+        x_prime = x * self.cos_phi_B + y * self.sin_phi_B 
+        y_prime = (- x * self.sin_phi_B + y * self.cos_phi_B) / self.cos_i
+
+        y_prime = self.distance * y_prime
+        x_prime = self.distance * x_prime
+
+        # q = np.sqrt(self.cos_i**2 * self.cos_phi_B**2 + self.sin_phi_B**2)
         
-        # Account for inclination
-        # In inclined disk: x' = x, y' = y/cos(i)
-        y_disk = y / self.cos_i if self.cos_i != 0 else y
-        
-        # Convert to radius in disk plane
-        R_angular = np.sqrt(x**2 + y_disk**2)
-        
-        # Convert angular radius to physical radius
-        R_physical = R_angular * self.distance / self.GM_over_c2
+        # Convert angular radius to physical radius in proper unts
+        R_physical = np.sqrt(x_prime**2 + y_prime**2) / self.GM_over_c2
         
         return self._disk_intensity(R_physical)
     
@@ -118,8 +141,8 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         except:
             return 1e-12  # Fallback value
     
-    def simplified_fringe_visibility(self, nu_0: float, baseline: np.ndarray,
-                                    grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
+    def V(self, nu_0: float, baseline: np.ndarray,
+          grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
         """
         Analytical simplified fringe visibility for Shakura-Sunyaev disk - Equation (8)
         
@@ -128,18 +151,17 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         """
         # Calculate baseline parameters
         B_mag = np.linalg.norm(baseline[:2])  # Use perpendicular component
-        phi_B = np.arctan2(baseline[1], baseline[0])
         
         # Calculate q factor
-        q = np.sqrt(self.cos_i**2 * np.cos(phi_B)**2 + np.sin(phi_B)**2)
+        q = np.sqrt(self.cos_i**2 * np.cos(self.phi_B)**2 + np.sin(self.phi_B)**2)
         
         # Wave number
         c = 2.99792458e8
         k = 2 * np.pi * nu_0 / c
         
-        # Calculate the oscillatory parameter
-        alpha = k * B_mag * self.GM_over_c2 * q / self.distance
-        
+        # Calculate the oscillatory parameter the integral is done over R in GM/c^2 units
+        alpha = k * B_mag *  q * self.GM_over_c2 / self.distance
+
         if alpha == 0:
             return 1.0 + 0.0j
         
@@ -148,9 +170,9 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
     
     def _visibility_integration(self, alpha: float) -> complex:
         """
-        Simplified integration with improved accuracy for all baselines
+        Proper integration using Bessel function J₀ for visibility calculation
         
-        Uses exact J₀ for small arguments and simplified form for large arguments
+        V = ∫ r * I(r) * J₀(αr) dr / ∫ r * I(r) dr
         """
         if alpha == 0:
             return 1.0 + 0.0j
@@ -159,23 +181,25 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
         if alpha < 1e-6:
             return 1.0 + 0.0j
         
-        # Set up integration range
+        # Set up integration range - need to go well beyond R_0 for proper oscillations
         R_min = self.R_in
-        R_max = max(100 * self.R_0, 20 / alpha if alpha > 0 else 100 * self.R_0)
+        R_max = max(100 * self.R_0, 50 / alpha if alpha > 0 else 100 * self.R_0)
         
-        # Use moderate point density for efficiency
-        n_points = max(3000, int(15 * alpha * R_max / (2 * np.pi)))
-        n_points = min(n_points, 10000)  # Keep computational load reasonable
+        # Use sufficient point density for accurate Bessel function sampling
+        n_points = max(50000, int(30 * alpha * R_max / (2 * np.pi)))
+        n_points = min(n_points, 20000)  # Keep computational load reasonable
         
         r_array = np.linspace(R_min, R_max, n_points)
         
         # Calculate intensity values
         I_values = np.array([self._disk_intensity(r) for r in r_array])
         
-        # Use the exact relationship: ∫ r * I(r) * J₀(αr) dr = (1/α) ∫ I(r) * sin(αr) dr
-        # This eliminates the leading r factor and is computationally more efficient
-        numerator_integrand = I_values * np.sin(alpha * r_array) / alpha
+        # Use proper Bessel function J₀(αr) for the visibility integral
+        from scipy.special import j0
+        bessel_values = j0(alpha * r_array)
         
+        # Calculate numerator and denominator integrals
+        numerator_integrand = r_array * I_values * bessel_values
         denominator_integrand = r_array * I_values
         
         # Use trapezoidal integration
@@ -193,23 +217,14 @@ class ShakuraSunyaevDisk(AbstractIntensitySource):
             visibility = visibility / visibility_mag
         
         return complex(visibility.real, 0.0)
-    
-    def simplified_visibility(self, nu_0: float, baseline: np.ndarray,
-                             grid_size: int = 128, sky_extent: float = 1e-4) -> complex:
-        """
-        Simplified visibility for Shakura-Sunyaev disk (numerator of Equation 8)
-        
-        Uses default FFT-based calculation from base class
-        """
-        return super().simplified_visibility(nu_0, baseline, grid_size, sky_extent)
-    
 
 
-class BroadLineRegion(AbstractIntensitySource):
+class BroadLineRegion(ChaoticSource):
     """
     Simplified Broad Line Region model for AGN - Section IV
     
-    Models BLR as Keplerian disk with velocity-dependent emission
+    Models BLR as Keplerian disk with velocity-dependent emission.
+    Inherits temporal coherence functions from ChaoticSource.
     """
     
     def __init__(self, beta_function: callable, R_in: float, R_out: float,
@@ -304,7 +319,6 @@ class BroadLineRegion(AbstractIntensitySource):
             return R * self.beta_function(R) * abs(self.cos_i)
         
         try:
-            from scipy.integrate import dblquad
             flux, _ = dblquad(integrand, 0, 2*np.pi, self.R_in, self.R_out)
             
             # Convert to observed flux
@@ -318,7 +332,8 @@ class RelativisticDisk(ShakuraSunyaevDisk):
     """
     Simplified relativistic accretion disk including basic relativistic effects
     
-    Extension of Shakura-Sunyaev disk with simplified relativistic corrections
+    Extension of Shakura-Sunyaev disk with simplified relativistic corrections.
+    Inherits temporal coherence functions from ChaoticSource via ShakuraSunyaevDisk.
     """
     
     def __init__(self, *args, spin_parameter: float = 0.0, **kwargs):
@@ -366,7 +381,7 @@ class RelativisticDisk(ShakuraSunyaevDisk):
         v_los = v_phi * self.sin_i * np.sin(phi)
         
         # Simplified relativistic Doppler factor
-        gamma = 1.0 / np.sqrt(1 - v_phi**2)
+        gamma = 1.0 / np.sqrt(1 - self.GM_over_c2 / R)
         return gamma * (1 - v_los)
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
@@ -389,7 +404,9 @@ class RelativisticDisk(ShakuraSunyaevDisk):
         R_physical = R_angular * self.distance / self.GM_over_c2
         
         # Apply simplified Doppler beaming
-        doppler_factor = self._doppler_factor(R_physical, phi)
+        # doppler_factor = self._doppler_factor(R_physical, phi)
+        # turn this off
+        doppler_factor = 1.0
         
         # Intensity transforms as I' = D³ I in observer frame
         return base_intensity * doppler_factor**3

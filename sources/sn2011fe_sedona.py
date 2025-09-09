@@ -114,6 +114,8 @@ class SedonaSN2011feSource(ChaoticSource):
         # Store frequency range for reference
         self.freq_min = np.min(freq_unique)
         self.freq_max = np.max(freq_unique)
+
+        self.cached_fft = None
         
         print(f"Loaded Sedona SN2011fe model:")
         print(f"  Wavelength range: {np.min(self.wavelength_grid):.1f} - {np.max(self.wavelength_grid):.1f} Å")
@@ -207,13 +209,16 @@ class SedonaSN2011feSource(ChaoticSource):
                 x0, x1 = int(x_pixel), min(int(x_pixel) + 1, self.nx - 1)
                 y0, y1 = int(y_pixel), min(int(y_pixel) + 1, self.ny - 1)
                 
-                fx = x_pixel - int(x_pixel)
-                fy = y_pixel - int(y_pixel)
-                
-                intensity = (intensity_map_si[y0, x0] * (1 - fx) * (1 - fy) +
-                           intensity_map_si[y0, x1] * fx * (1 - fy) +
-                           intensity_map_si[y1, x0] * (1 - fx) * fy +
-                           intensity_map_si[y1, x1] * fx * fy)
+                intensity = intensity_map_si[y0, x0] 
+
+                # if interpolated
+                # fx = x_pixel - int(x_pixel)
+                # fy = y_pixel - int(y_pixel)
+                       
+                # intensity = (intensity_map_si[y0, x0] * (1 - fx) * (1 - fy) +
+                #            intensity_map_si[y0, x1] * fx * (1 - fy) +
+                #            intensity_map_si[y1, x0] * (1 - fx) * fy +
+                #            intensity_map_si[y1, x1] * fx * fy)
                 return intensity
             else:
                 return 0.0
@@ -227,18 +232,119 @@ class SedonaSN2011feSource(ChaoticSource):
                 if (0 <= x_pixel < self.nx and 0 <= y_pixel < self.ny):
                     x0, x1 = int(x_pixel), min(int(x_pixel) + 1, self.nx - 1)
                     y0, y1 = int(y_pixel), min(int(y_pixel) + 1, self.ny - 1)
+
+                    intensities[i] = intensity_map_si[y0, x0]
                     
-                    fx = x_pixel - int(x_pixel)
-                    fy = y_pixel - int(y_pixel)
+                    # fx = x_pixel - int(x_pixel)
+                    # fy = y_pixel - int(y_pixel)
                     
-                    intensities[i] = (intensity_map_si[y0, x0] * (1 - fx) * (1 - fy) +
-                                    intensity_map_si[y0, x1] * fx * (1 - fy) +
-                                    intensity_map_si[y1, x0] * (1 - fx) * fy +
-                                    intensity_map_si[y1, x1] * fx * fy)
+                    # intensities[i] = (intensity_map_si[y0, x0] * (1 - fx) * (1 - fy) +
+                    #                 intensity_map_si[y0, x1] * fx * (1 - fy) +
+                    #                 intensity_map_si[y1, x0] * (1 - fx) * fy +
+                    #                 intensity_map_si[y1, x1] * fx * fy)
                 else:
                     intensities[i] = 0.0
             return intensities
-    
+
+    def V(self, nu_0: float, baseline: np.ndarray,
+          grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
+        """
+        Calculate the spatial visibility function V.
+            V(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
+        
+        Equation 8 in Dalal et al. 2024 (arXiv:2403.15903v1).
+
+        The general implmentation The uses FFT with to accurately approximate
+        the continuous Fourier transform.
+        
+        Parameters
+        ----------
+        nu_0 : float
+            Central frequency in Hz. Determines the wavelength λ₀ = c/ν₀.
+        baseline : array_like, shape (3,)
+            Baseline vector in meters [Bx, By, Bz]. Only the perpendicular
+            components (Bx, By) are used in the calculation.
+        grid_size : int, optional
+            Size of the FFT grid. Larger values give better accuracy but
+            slower computation. Default is 512.
+        sky_extent : float, optional
+            Angular extent of the sky grid in radians. Should be large enough
+            to contain the source but small enough for good frequency resolution.
+            Default is 2e-7 rad (~0.04 arcsec).
+            
+        Returns
+        -------
+        V : complex
+            Normalized fringe visibility. The magnitude gives the visibility
+            amplitude, and the phase gives the visibility phase.
+            
+        Notes
+        -----
+        The FFT method works well for extended sources but may have numerical
+        artifacts for very compact sources. For simple geometries like point
+        sources or uniform disks, analytical methods may be more accurate.
+        
+        The grid parameters (grid_size, sky_extent) should be chosen based on
+        the source size and desired accuracy:
+        - sky_extent should be several times the source angular size
+        - grid_size should be large enough for good sampling of the source
+        
+        Examples
+        --------
+        >>> source = UniformDisk(flux_density=1e-26, radius=1e-8)
+        >>> baseline = np.array([100.0, 0.0, 0.0])  # 100m E-W
+        >>> nu_0 = 5e14  # 600 nm
+        >>> vis = source.V(nu_0, baseline)
+        >>> print(f"Visibility: {vis:.3f}")
+        """
+
+        if self.chached_fft is None:
+            # Physical constants
+            c = 2.99792458e8  # Speed of light in m/s
+            wavelength = c / nu_0
+            
+            # Extract perpendicular baseline components (ignore Bz)
+            baseline_perp = baseline[:2]
+            
+            # Set up coordinate grids
+            pixel_scale = sky_extent / grid_size
+            coords_1d = np.linspace(-sky_extent/2, sky_extent/2, grid_size, endpoint=False)
+            sky_x, sky_y = np.meshgrid(coords_1d, coords_1d)
+            
+            # Calculate intensity on grid
+            intensity_grid = np.zeros((grid_size, grid_size))
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    n_hat = np.array([sky_x[i, j], sky_y[i, j]])
+                    intensity_grid[i, j] = self.intensity(nu_0, n_hat)
+
+            # Compute 2D FFT with proper shifting
+            intensity_fft = fft2(self.flux_data_3d))
+            intensity_fft = fftshift(intensity_fft)
+            
+            # Normalize by pixel area and total flux
+            pixel_area = pixel_scale**2
+            total_flux = np.sum(intensity_grid) * pixel_area
+            
+            if total_flux > 0:
+                # Proper normalization for discrete FFT to approximate continuous transform
+                intensity_fft *= pixel_area / total_flux
+            else:
+                return 0.0 + 0.0j
+            
+            # Convert baseline to spatial frequency coordinates
+            u_freq = baseline_perp[0] / wavelength if len(baseline_perp) > 0 else 0.0
+            v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
+            
+            # Convert to grid indices
+            freq_resolution = 1.0 / sky_extent
+            u_idx = u_freq / freq_resolution + grid_size // 2
+            v_idx = v_freq / freq_resolution + grid_size // 2
+            
+            self.chached_fft = [intensity_fft, u_idx, v_idx]  # Cache for debugging if needed
+        # Interpolate FFT result at the desired spatial frequency
+        return self._bilinear_interpolate(self.cached_fft[0], self.cached_fft[1], self.cached_fft[2])
+
     def total_flux(self, nu: float) -> float:
         """
         Calculate total flux F_nu = ∫ I_nu d²n̂.
@@ -262,7 +368,9 @@ class SedonaSN2011feSource(ChaoticSource):
         source parameters. The result should be consistent with numerical
         integration of the intensity() method over the sky.
         """
-        return float(self.flux_interpolator(nu))
+
+        freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
+        return self.total_flux_spectrum[freq_idx]
     
     def get_spectrum_info(self):
         """
