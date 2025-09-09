@@ -65,7 +65,6 @@ from scipy.integrate import quad, dblquad
 from scipy.fft import fft2, ifft2, fftfreq, fftshift, ifftshift
 from scipy.interpolate import RegularGridInterpolator
 from dataclasses import dataclass
-import astropy.constants
 
 class AbstractSource(ABC):
     """
@@ -260,7 +259,7 @@ class AbstractSource(ABC):
         >>> print(f"Visibility: {vis:.3f}")
         """
         # Physical constants
-        c = astropy.constants.c.mks #2.99792458e8  # Speed of light in m/s
+        c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
         
         # Extract perpendicular baseline components (ignore Bz)
@@ -277,7 +276,7 @@ class AbstractSource(ABC):
             for j in range(grid_size):
                 n_hat = np.array([sky_x[i, j], sky_y[i, j]])
                 intensity_grid[i, j] = self.intensity(nu_0, n_hat)
-        
+
         # Compute 2D FFT with proper shifting
         intensity_fft = fft2(intensity_grid)
         intensity_fft = fftshift(intensity_fft)
@@ -615,7 +614,7 @@ class PointSource(ChaoticSource):
             Visibility function: exp(2πi B_⊥ · n̂₀ / λ) where n̂₀ = [0,0].
         """
         # Physical constants
-        c = astropy.constants.c.mks #2.99792458e8  # Speed of light in m/s
+        c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
         
         # Extract perpendicular baseline components (ignore Bz)
@@ -769,7 +768,7 @@ class UniformDisk(ChaoticSource):
         from scipy.special import j1
         
         # Physical constants
-        c = astropy.constants.c.mks #2.99792458e8  # Speed of light in m/s
+        c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
         
         # Extract perpendicular baseline components
