@@ -269,7 +269,7 @@ def plot_visibility_characteristics():
         theta_char = ss_disk.GM_over_c2 * ss_disk.R_0 / ss_disk.distance
         
         # Calculate zeta range: zeta = pi * B * theta / lambda
-        zetas = np.linspace(0.1, 10, 100)
+        zetas = np.logspace(-1, 2)
         baseline_lengths_zeta = zetas * wavelength / (np.pi * theta_char)
         visibilities_zeta = []
         
@@ -277,17 +277,18 @@ def plot_visibility_characteristics():
             baseline = np.array([B, 0.0, 0.0])
             try:
                 vis = ss_disk.V(nu_0, baseline)
-                visibilities_zeta.append(abs(vis))
+                visibilities_zeta.append(abs(vis)**2)
             except:
                 visibilities_zeta.append(0.0)
-        
-        ax2.plot(zetas, visibilities_zeta, 'b-', linewidth=2, label='SS Disk')
+
+        ax2.loglog(zetas, visibilities_zeta, linewidth=2)  # Log-log plot in km        
+        # ax2.plot(zetas, visibilities_zeta**2, 'b-', linewidth=2, label='SS Disk')
         ax2.set_xlabel('ζ = πBθ/λ')
-        ax2.set_ylabel('|V(ζ)|')
-        ax2.set_title(f'Visibility vs Zeta\n(θ ≈ {theta_char*1e6:.1f} μrad)')
+        ax2.set_ylabel('|V(ζ)|²')
+        ax2.set_title(f'Squared Visibility vs Zeta\n(θ ≈ {theta_char*1e6:.1f} μrad)')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
-        ax2.set_ylim(0, 1.1)
+        ax2.set_ylim(1e-6, 1.1)
         
         # Plot 3: Visibility comparison between models
         baseline_test = np.array([1000.0, 0.0, 0.0])  # 1 km baseline
@@ -301,7 +302,7 @@ def plot_visibility_characteristics():
             for freq in frequencies:
                 try:
                     vis = source.V(freq, baseline_test)
-                    vis_vs_freq.append(abs(vis))
+                    vis_vs_freq.append(abs(vis)**2)
                 except:
                     vis_vs_freq.append(0.0)
             
@@ -309,8 +310,8 @@ def plot_visibility_characteristics():
             ax3.plot(frequencies / 1e14, vis_vs_freq, linewidth=2, label=label)
         
         ax3.set_xlabel('Frequency (×10¹⁴ Hz)')
-        ax3.set_ylabel('|V|')
-        ax3.set_title(f'Visibility vs Frequency\n(B = {baseline_test[0]:.0f} m)')
+        ax3.set_ylabel('|V|²')
+        ax3.set_title(f'Squared Visibility vs Frequency\n(B = {baseline_test[0]:.0f} m)')
         ax3.legend()
         ax3.grid(True, alpha=0.3)
         ax3.set_ylim(0, 1.1)
@@ -325,7 +326,7 @@ def plot_visibility_characteristics():
             try:
                 vis = ss_disk.V(nu_0, baseline)
                 vis_phases_ss.append(np.angle(vis) * 180/np.pi)
-                vis_amplitudes_ss.append(abs(vis))
+                vis_amplitudes_ss.append(abs(vis)**2)
             except:
                 vis_phases_ss.append(0.0)
                 vis_amplitudes_ss.append(0.0)
@@ -335,9 +336,9 @@ def plot_visibility_characteristics():
         line2 = ax4_twin.plot(baseline_lengths_phase, vis_phases_ss, 'r-', linewidth=2, label='Phase (deg)')
         
         ax4.set_xlabel('Baseline Length (m)')
-        ax4.set_ylabel('|V|', color='blue')
+        ax4.set_ylabel('|V|²', color='blue')
         ax4_twin.set_ylabel('Phase (degrees)', color='red')
-        ax4.set_title('Visibility Amplitude and Phase')
+        ax4.set_title('Square Visibility Amplitude and Phase')
         ax4.grid(True, alpha=0.3)
         
         # Combine legends
@@ -346,6 +347,7 @@ def plot_visibility_characteristics():
         ax4.legend(lines, labels, loc='upper right')
         
     except Exception as e:
+        print(e)
         for i, ax in enumerate([ax1, ax2, ax3, ax4]):
             ax.text(0.5, 0.5, f'Visibility plot {i+1}\nError: {str(e)[:30]}...', 
                    ha='center', va='center', transform=ax.transAxes, fontsize=10)
