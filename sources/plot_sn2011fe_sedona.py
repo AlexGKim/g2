@@ -323,9 +323,11 @@ def plot_visibility_calculations():
         # Estimate source angular size from intensity profile
         # Use the pixel scale as a rough estimate of angular size
         theta_estimate = source.pixel_scale * 5  # Rough estimate
-        
+
+        # print(source.pixel_scale, theta_estimate, 1.22*wavelength/source.pixel_scale)
+
         # Plot 1: Visibility vs baseline length
-        baseline_lengths = np.logspace(1, 4, 25)  # 10 m to 10 km
+        baseline_lengths = np.logspace(-2, 2, 25)  # 0.01 m to 100 m
         visibilities = []
         
         for B in baseline_lengths:
@@ -433,7 +435,6 @@ def plot_visibility_calculations():
         for i, ax in enumerate([ax1, ax2, ax3, ax4]):
             ax.text(0.5, 0.5, f'Visibility test {i+1}\nError: {str(e)[:30]}...', 
                    ha='center', va='center', transform=ax.transAxes, fontsize=10)
-    
     plt.tight_layout()
     return fig
 
@@ -776,30 +777,30 @@ def main():
     
     try:
         with PdfPages('sources/plot_sn2011fe_sedona.pdf') as pdf:
-            print("1. Creating data loading and initialization plots...")
-            fig1 = plot_data_loading_and_initialization()
-            pdf.savefig(fig1, bbox_inches='tight')
-            plt.close(fig1)
+            # print("1. Creating data loading and initialization plots...")
+            # fig1 = plot_data_loading_and_initialization()
+            # pdf.savefig(fig1, bbox_inches='tight')
+            # plt.close(fig1)
             
-            print("2. Creating intensity calculation plots...")
-            fig2 = plot_intensity_calculations()
-            pdf.savefig(fig2, bbox_inches='tight')
-            plt.close(fig2)
+            # print("2. Creating intensity calculation plots...")
+            # fig2 = plot_intensity_calculations()
+            # pdf.savefig(fig2, bbox_inches='tight')
+            # plt.close(fig2)
             
             print("3. Creating visibility calculation plots (including zeta plot)...")
             fig3 = plot_visibility_calculations()
             pdf.savefig(fig3, bbox_inches='tight')
             plt.close(fig3)
             
-            print("4. Creating chaotic source inheritance plots...")
-            fig4 = plot_chaotic_source_inheritance()
-            pdf.savefig(fig4, bbox_inches='tight')
-            plt.close(fig4)
+            # print("4. Creating chaotic source inheritance plots...")
+            # fig4 = plot_chaotic_source_inheritance()
+            # pdf.savefig(fig4, bbox_inches='tight')
+            # plt.close(fig4)
             
-            print("5. Creating integration test plots...")
-            fig5 = plot_integration_tests()
-            pdf.savefig(fig5, bbox_inches='tight')
-            plt.close(fig5)
+            # print("5. Creating integration test plots...")
+            # fig5 = plot_integration_tests()
+            # pdf.savefig(fig5, bbox_inches='tight')
+            # plt.close(fig5)
             
             # Add metadata
             d = pdf.infodict()
