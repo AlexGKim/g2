@@ -228,7 +228,7 @@ def plot_intensity_calculations():
         test_freq = 5e14  # ~600 nm
         
         # Plot 1: Intensity vs direction (single frequency)
-        directions = np.linspace(-5e-6, 5e-6, 50)  # radians
+        directions = np.linspace(-source.pixel_scale*source.nx, source.pixel_scale*source.ny, 50)  # radians
         intensities_x = []
         intensities_y = []
         
@@ -262,7 +262,7 @@ def plot_intensity_calculations():
         ax2.grid(True, alpha=0.3)
         
         # Plot 3: 2D intensity map
-        extent = 5e-6  # radians
+        extent = source.pixel_scale*source.nx/2  # radians
         n_points = min(source.nx, source.ny, 25)  # Cap at 25 for performance
         x_range = np.linspace(-extent, extent, n_points)
         y_range = np.linspace(-extent, extent, n_points)
@@ -287,7 +287,7 @@ def plot_intensity_calculations():
         # Plot 4: Multiple directions test (polar plot)
         n_directions = 20
         angles = np.linspace(0, 2*np.pi, n_directions)
-        radius = 2e-6  # radians
+        radius = 3 * source.pixel_scale  # radians
         
         directions_multi = np.array([[radius * np.cos(a), radius * np.sin(a)] for a in angles])
         intensities_multi = source.intensity(test_freq, directions_multi)
