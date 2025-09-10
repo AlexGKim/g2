@@ -324,46 +324,48 @@ def plot_visibility_calculations():
         
         # Estimate source angular size from intensity profile
         # Use the pixel scale as a rough estimate of angular size
-        theta_estimate = source.pixel_scale * 5  # Rough estimate
+        theta_estimate = source.pixel_scale * 6.2  # Rough estimate
 
         # print(source.pixel_scale, theta_estimate, 1.22*wavelength/source.pixel_scale)
 
         # Plot 1: Visibility vs baseline length
-        baseline_lengths = np.logspace(-2, 2, 25)  # 0.01 m to 100 m
+        zetas = np.linspace(0.1, 10, 50)
+        baseline_lengths = zetas * wavelength / (np.pi * theta_estimate)
+        # baseline_lengths = np.logspace(-2, 2, 25)  # 0.01 m to 100 m
         visibilities = []
         
         for B in baseline_lengths:
             baseline = np.array([B, 0.0, 0.0])
             try:
-                vis = source.V(nu_0, baseline)
-                visibilities.append(abs(vis))
+                vis = source.V_squared(nu_0, baseline)
+                visibilities.append(vis)
             except:
                 visibilities.append(0.0)
         
-        ax1.semilogx(baseline_lengths, visibilities, 'b-', linewidth=2, marker='o', markersize=4)
+        ax1.semilogy(baseline_lengths, visibilities, 'b-', linewidth=2, marker='o', markersize=4)
         ax1.set_xlabel('Baseline Length (m)')
-        ax1.set_ylabel('|V(B)|')
+        ax1.set_ylabel('|V(B)|^2')
         ax1.set_title('Visibility vs Baseline Length')
         ax1.grid(True, alpha=0.3)
         ax1.set_ylim(0, 1.1)
         
         # Plot 2: Visibility vs zeta (KEY PLOT REQUESTED)
         # zeta is related to baseline by: baseline_lengths = zetas * wavelength / (np.pi * theta)
-        zetas = np.linspace(0.1, 10, 50)
+        # zetas = np.linspace(0.1, 10, 50)
         baseline_lengths_zeta = zetas * wavelength / (np.pi * theta_estimate)
         visibilities_zeta = []
         
         for B in baseline_lengths_zeta:
             baseline = np.array([B, 0.0, 0.0])
             try:
-                vis = source.V(nu_0, baseline)
-                visibilities_zeta.append(abs(vis))
+                vis = source.V_squared(nu_0, baseline)
+                visibilities_zeta.append(vis)
             except:
                 visibilities_zeta.append(0.0)
         
-        ax2.plot(zetas, visibilities_zeta, 'r-', linewidth=2, marker='s', markersize=4)
+        ax2.semilogy(zetas, visibilities_zeta, 'r-', linewidth=2, marker='s', markersize=4)
         ax2.set_xlabel('ζ = πBθ/λ')
-        ax2.set_ylabel('|V(ζ)|')
+        ax2.set_ylabel('|V(ζ)|^2')
         ax2.set_title(f'Visibility vs Zeta\n(θ ≈ {theta_estimate*1e6:.1f} μrad)')
         ax2.grid(True, alpha=0.3)
         ax2.set_ylim(0, 1.1)
@@ -378,14 +380,15 @@ def plot_visibility_calculations():
                 if z == 0:
                     vis_theory.append(1.0)
                 else:
-                    vis_theory.append(abs(2 * j1(z) / z))
-            ax2.plot(zetas_theory, vis_theory, 'k--', alpha=0.7, label='Uniform disk theory')
+                    vis_theory.append(abs(2 * j1(z) / z)**2)
+            ax2.semilogy(zetas_theory, vis_theory, 'k--', alpha=0.7, label='Uniform disk theory')
             ax2.legend()
         except:
             pass
         
         # Plot 3: Visibility phase vs baseline
-        baseline_lengths_phase = np.linspace(10, 1000, 30)
+        baseline_lengths_phase = zetas * wavelength / (np.pi * theta_estimate)
+        # baseline_lengths_phase = np.linspace(10, 1000, 30)
         vis_phases = []
         vis_amplitudes = []
         
@@ -416,7 +419,8 @@ def plot_visibility_calculations():
         
         # Plot 4: Visibility vs frequency
         test_freqs = np.linspace(source.freq_min, source.freq_max, 30)
-        baseline_fixed = np.array([100.0, 0.0, 0.0])  # 100m baseline
+        baseline = wavelength / (np.pi * theta_estimate)
+        baseline_fixed = np.array([baseline, 0.0, 0.0])  # 100m baseline
         vis_vs_freq = []
         
         for freq in test_freqs:
@@ -429,7 +433,7 @@ def plot_visibility_calculations():
         ax4.plot(test_freqs / 1e14, vis_vs_freq, 'g-', linewidth=2, marker='d', markersize=4)
         ax4.set_xlabel('Frequency (×10¹⁴ Hz)')
         ax4.set_ylabel('|V|')
-        ax4.set_title(f'Visibility vs Frequency\n(B = {baseline_fixed[0]:.0f} m)')
+        ax4.set_title(f'Visibility vs Frequency\n(B = {baseline_fixed[0]:.4f} m)')
         ax4.grid(True, alpha=0.3)
         ax4.set_ylim(0, 1.1)
         

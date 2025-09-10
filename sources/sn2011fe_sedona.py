@@ -276,7 +276,7 @@ class SedonaSN2011feSource(ChaoticSource):
         u_freq = baseline_perp[0] / wavelength if len(baseline_perp) > 0 else 0.0
         v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
         
-        # Interpolate FFT result at the desired spatial frequency
+        # Get FFT result at the closest spatial frequency coordinates
         return self._interpolate_fft_result(intensity_fft, u_coords, v_coords, u_freq, v_freq)
     
     def _compute_and_cache_fft(self, freq_idx: int):
@@ -330,7 +330,7 @@ class SedonaSN2011feSource(ChaoticSource):
     def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_coords: np.ndarray,
                                v_coords: np.ndarray, u_target: float, v_target: float) -> complex:
         """
-        Interpolate FFT result at target spatial frequency coordinates.
+        Get FFT result at the closest spatial frequency coordinates.
         
         Parameters
         ----------
@@ -344,25 +344,14 @@ class SedonaSN2011feSource(ChaoticSource):
         Returns
         -------
         complex
-            Interpolated visibility value
+            FFT value at closest coordinates
         """
-        from scipy.interpolate import RegularGridInterpolator
+        # Find the closest indices for u and v coordinates
+        u_idx = np.argmin(np.abs(u_coords - u_target))
+        v_idx = np.argmin(np.abs(v_coords - v_target))
         
-        # Create interpolator for real and imaginary parts separately
-        real_interp = RegularGridInterpolator(
-            (v_coords, u_coords), intensity_fft.real,
-            bounds_error=False, fill_value=0.0
-        )
-        imag_interp = RegularGridInterpolator(
-            (v_coords, u_coords), intensity_fft.imag,
-            bounds_error=False, fill_value=0.0
-        )
-        
-        # Interpolate at target coordinates
-        real_val = real_interp([v_target, u_target])[0]
-        imag_val = imag_interp([v_target, u_target])[0]
-        
-        return complex(real_val, imag_val)
+        # Return the FFT value at the closest grid point
+        return intensity_fft[v_idx, u_idx]
 
     def get_params(self) -> dict:
         """
