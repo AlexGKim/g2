@@ -132,7 +132,18 @@ class AbstractSource(ABC):
         all solid angles gives the total flux density at frequency nu.
         """
         pass
-    
+
+    @abstractmethod
+
+    def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None ) -> complex:
+        """
+        The visibility that corresponds to the intensity distribution.
+
+        There is a general implementation using FFT provided in this base class
+        V_fft    
+        """
+        pass
+
     @abstractmethod
     def total_flux(self, nu: float) -> float:
         """
@@ -210,20 +221,27 @@ class AbstractSource(ABC):
         decays from its peak value at Δt = 0 to zero at large time lags.
         """
         pass
-    
-    @abstractmethod
-    def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None ) -> complex:
-        pass
 
     @abstractmethod
     def get_params(self) -> dict:
+        """
+        The parameters that define the source model, particularly those that
+        may be varied in fitting or optimization.
+        """
         pass
 
     def V_squared(self, nu_0: float, baseline: np.ndarray, params: dict = None ) -> float:
+        """
+        Calculate squared visibility |V|².  The spatial dependence of the intensity
+        interferometry signal (function of baseline) is directly proportional to |V|².
+        """
         ans = self.V(nu_0, baseline, params) 
         return jnp.abs(ans)**2
     
     def V_squared_jacobian(self,nu_0, baseline: np.ndarray, params: dict = None ):
+        """
+        The Jacobian of |V|^2 with respect to the source parameters.
+        """
         def pure_V_squared(params):
             return self.V_squared(nu_0, baseline, params)
         
@@ -748,7 +766,7 @@ class UniformDisk(ChaoticSource):
         intensity : float
             Specific intensity in W m⁻² Hz⁻¹ sr⁻¹.
         """
-        r = np.sqrt(n_hat[0]**2 + n_hat[1]**2)
+        r = jnp.sqrt(n_hat[0]**2 + n_hat[1]**2)
         return self.surface_brightness if r <= self.radius else 0.0
     
     def total_flux(self, nu: float) -> float:

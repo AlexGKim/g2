@@ -113,10 +113,12 @@ def get_source():
         # Try to use real Sedona data first
         real_wave_file = 'data/WaveGrid.npy'
         real_flux_file = 'data/Phase0Flux.npy'
-        
+
         if os.path.exists(real_wave_file) and os.path.exists(real_flux_file):
+            wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
+            flux_data = np.flip(np.load(real_flux_file),axis=0)  # [erg/s/cm²/Å] - 3D array
             # Use real Sedona data
-            source = SedonaSN2011feSource(real_wave_file, real_flux_file)
+            source = SedonaSN2011feSource(wavelength_grid, flux_data)
             data_type = "Real Sedona Data"
         else:
             # Fallback to mock data
@@ -152,11 +154,11 @@ def plot_data_loading_and_initialization():
         ax1.grid(True, alpha=0.3)
         
         # Plot 2: Photon flux density per frequency
-        ax2.plot(source.wavelength_grid, source.photon_flux_density_grid, 'r-', linewidth=2, label='SEDONA')
+        ax2.plot(source.wavelength_grid, source.total_photon_spectrum, 'r-', linewidth=2, label='SEDONA')
         ax2.set_xlabel('Wavelength (Å)')
         ax2.set_ylabel('n_ν [s⁻¹ cm⁻² Hz⁻¹]')
         ax2.set_title(f'Photon Flux Density per Frequency\n({data_type})')
-        ax2.set_ylim((0, np.max(source.photon_flux_density_grid[np.logical_and(
+        ax2.set_ylim((0, np.max(source.total_photon_spectrum[np.logical_and(
             source.wavelength_grid > 4000, source.wavelength_grid < 8000)]) * 1.1))
         ax2.set_xlim((3300, 10000))
         ax2.grid(True, alpha=0.3)
@@ -777,15 +779,15 @@ def main():
     
     try:
         with PdfPages('sources/plot_sn2011fe_sedona.pdf') as pdf:
-            # print("1. Creating data loading and initialization plots...")
-            # fig1 = plot_data_loading_and_initialization()
-            # pdf.savefig(fig1, bbox_inches='tight')
-            # plt.close(fig1)
+            print("1. Creating data loading and initialization plots...")
+            fig1 = plot_data_loading_and_initialization()
+            pdf.savefig(fig1, bbox_inches='tight')
+            plt.close(fig1)
             
-            # print("2. Creating intensity calculation plots...")
-            # fig2 = plot_intensity_calculations()
-            # pdf.savefig(fig2, bbox_inches='tight')
-            # plt.close(fig2)
+            print("2. Creating intensity calculation plots...")
+            fig2 = plot_intensity_calculations()
+            pdf.savefig(fig2, bbox_inches='tight')
+            plt.close(fig2)
             
             print("3. Creating visibility calculation plots (including zeta plot)...")
             fig3 = plot_visibility_calculations()
