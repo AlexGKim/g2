@@ -65,6 +65,10 @@ from scipy.integrate import quad, dblquad
 from scipy.fft import fft2, ifft2, fftfreq, fftshift, ifftshift
 from scipy.interpolate import RegularGridInterpolator
 from dataclasses import dataclass
+import jax
+import jax.numpy as jnp
+from typing import Dict, Any
+
 
 class AbstractSource(ABC):
     """
@@ -207,7 +211,28 @@ class AbstractSource(ABC):
         """
         pass
     
-    def V(self, nu_0: float, baseline: np.ndarray,
+    @abstractmethod
+    def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None ) -> complex:
+        pass
+
+    @abstractmethod
+    def get_params(self) -> dict:
+        pass
+
+    def V_squared(self, nu_0: float, baseline: np.ndarray, params: dict = None ) -> float:
+        ans = self.V(nu_0, baseline, params) 
+        return jnp.abs(ans)**2
+    
+    def V_squared_jacobian(self,nu_0, baseline: np.ndarray, params: dict = None ):
+        def pure_V_squared(params):
+            return self.V_squared(nu_0, baseline, params)
+        
+        if params is None:
+            params = self.get_params()
+            
+        return jax.jacrev(pure_V_squared)(params)
+
+    def V_fft(self, nu_0: float, baseline: np.ndarray,
           grid_size: int = 512, sky_extent: float = 2e-7) -> complex:
         """
         Calculate the spatial visibility function V.
@@ -519,7 +544,7 @@ class PointSource(ChaoticSource):
     >>> print(f"Visibility: {abs(vis):.3f}")  # Should be 1.000
     """
     
-    def __init__(self, flux_function: Callable[[float], float], position: np.ndarray = None):
+    def __init__(self, flux_function: Callable[[float], float], position: jnp.ndarray = None):
         """
         Initialize point source.
         
@@ -533,7 +558,14 @@ class PointSource(ChaoticSource):
             Default is [0, 0] (at the origin).
         """
         self.flux_function = flux_function
-        self.position = np.array([0.0, 0.0]) if position is None else np.array(position)
+        self.position = jnp.array([0.0, 0.0]) if position is None else jnp.array(position)
+
+    def get_params(self) -> Dict[str, Any]:
+        """Extract parameters as a dictionary"""
+        return {
+            'flux_function': self.flux_function,
+            'position': self.position
+        }
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, atol: float = 1e-10) -> Union[float, np.ndarray]:
         """
@@ -585,8 +617,7 @@ class PointSource(ChaoticSource):
         """
         return self.flux_function(nu)
     
-    def V(self, nu_0: float, baseline: np.ndarray,
-          grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
+    def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None) -> complex:
         """
         Analytical visibility function V for point source at origin.
         
@@ -613,6 +644,10 @@ class PointSource(ChaoticSource):
         V : complex
             Visibility function: exp(2πi B_⊥ · n̂₀ / λ) where n̂₀ = [0,0].
         """
+
+        if params is None:
+            params = self.get_params()
+
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
@@ -622,10 +657,10 @@ class PointSource(ChaoticSource):
         
         # For point source at origin: n̂₀ = [0, 0]
         # Calculate phase: 2π B_⊥ · n̂₀ / λ = 2π B_⊥ · [0,0] / λ = 0
-        phase = 0.0
+        phase = 2 * np.pi * jnp.dot(baseline_perp, params['position']) / wavelength
         
         # Return complex exponential: exp(i * 0) = 1.0 + 0.0j
-        return np.exp(1j * phase)
+        return jnp.exp(1j * phase)
 
 
 class UniformDisk(ChaoticSource):
