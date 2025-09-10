@@ -229,7 +229,7 @@ class AbstractSource(ABC):
         
         if params is None:
             params = self.get_params()
-            
+
         return jax.jacrev(pure_V_squared)(params)
 
     def V_fft(self, nu_0: float, baseline: np.ndarray,
@@ -721,7 +721,14 @@ class UniformDisk(ChaoticSource):
         self.radius = radius
         # Calculate uniform surface brightness
         self.surface_brightness = flux_density / (np.pi * radius**2)
-    
+
+    def get_params(self) -> Dict[str, Any]:
+        """Extract parameters as a dictionary"""
+        return {
+            'flux_density': self.flux_density,
+            'radius': self.radius
+        }
+
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
         """
         Calculate uniform disk intensity.
@@ -760,8 +767,7 @@ class UniformDisk(ChaoticSource):
         """
         return self.flux_density
     
-    def V(self, nu_0: float, baseline: np.ndarray,
-          grid_size: int = 256, sky_extent: float = 1e-4) -> complex:
+    def V(self, nu_0: float, baseline: np.ndarray, params = None) -> complex:
         """
         Analytical visibility function V for uniform disk.
         
@@ -800,7 +806,10 @@ class UniformDisk(ChaoticSource):
         
         This corresponds to the classical resolution limit for circular apertures.
         """
-        from scipy.special import j1
+        # from scipy.special import j1
+
+        if params is None:
+            params = self.get_params()
         
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
@@ -808,20 +817,20 @@ class UniformDisk(ChaoticSource):
         
         # Extract perpendicular baseline components
         baseline_perp = baseline[:2]
-        baseline_length = np.linalg.norm(baseline_perp)
+        baseline_length = jnp.linalg.norm(baseline_perp)
         
         # Calculate spatial frequency u = |B_⊥|/λ
         u = baseline_length / wavelength
         
         # Calculate argument for Bessel function: x = 2πuθ
-        x = 2 * np.pi * u * self.radius
+        x = 2 * np.pi * u * params['radius']
         
         # Handle special case x=0 (zero baseline or zero radius)
         if x == 0:
             V_value = 1.0
         else:
             # Airy function: V(u) = 2J₁(x)/x
-            V_value = 2 * j1(x) / x
-        
+            # V_value = 2 * j1(x) / x
+            V_value = 2 * (jnp.sin(x) / x**2 - jnp.cos(x) / x) / x  
         # Return as complex number (phase is zero for symmetric disk)
         return V_value + 0.0j
