@@ -25,7 +25,7 @@ class SedonaSN2011feSource(ChaoticSource):
     """
     
     def __init__(self, wavelength_grid: np.ndarray, flux_grid: np.ndarray,
-                 B: float = 9.98, distance: float = 204379200000000.0):
+                 B: float = 9.98, distance: float = 204379200000000.0, phi_B: float = 0.0):
         """
         Initialize Sedona SN2011fe source with wavelength and flux grids as parameters
         
@@ -44,6 +44,11 @@ class SedonaSN2011feSource(ChaoticSource):
         # Store input grids directly as class parameters
         self.wavelength_grid = wavelength_grid  # [Angstrom]
         self.flux_data_3d = flux_grid  # [erg/s/cm²/Å] - 3D array
+        self.B = B
+        self.distance = distance
+        self.phi_B = phi_B  # Position angle for baseline orientation (not used here
+        self.cos_phi_B = np.cos(phi_B)
+        self.sin_phi_B = np.sin(phi_B)  
         
         # Get spatial dimensions
         self.n_wavelengths, self.nx, self.ny = self.flux_data_3d.shape
@@ -183,9 +188,10 @@ class SedonaSN2011feSource(ChaoticSource):
             Interpolated intensity value(s)
         """
         if np.ndim(n_hat) == 1:
+
             # Single direction vector
-            x_pixel = n_hat[0] / pixel_scale + self.nx // 2
-            y_pixel = n_hat[1] / pixel_scale + self.ny // 2
+            x_pixel = (n_hat[0]* self.cos_phi_B + n_hat[1] * self.sin_phi_B) / pixel_scale + self.nx // 2
+            y_pixel = (-n_hat[0]* self.sin_phi_B + n_hat[1] * self.cos_phi_B) / pixel_scale + self.ny // 2
             
             # Check if within bounds
             if (0 <= x_pixel < self.nx and 0 <= y_pixel < self.ny):
@@ -273,8 +279,8 @@ class SedonaSN2011feSource(ChaoticSource):
         baseline_perp = baseline[:2]
         
         # Convert baseline to spatial frequency coordinates
-        u_freq = baseline_perp[0] / wavelength if len(baseline_perp) > 0 else 0.0
-        v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
+        u_freq = (baseline_perp[0] * self.cos_phi_B + baseline_perp[1] * self.sin_phi_B) / wavelength if len(baseline_perp) > 0 else 0.0
+        v_freq = (-baseline_perp[0] * self.sin_phi_B + baseline_perp[1] * self.cos_phi_B) / wavelength if len(baseline_perp) > 1 else 0.0
         
         # Get FFT result at the closest spatial frequency coordinates
         return self._interpolate_fft_result(intensity_fft, u_coords, v_coords, u_freq, v_freq)
@@ -365,6 +371,7 @@ class SedonaSN2011feSource(ChaoticSource):
         return {
             'B': self.B,
             'distance': self.distance,
+            'phi_B': self.phi_B
         }
     
     def total_flux(self, nu: float) -> float:
