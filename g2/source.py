@@ -1,6 +1,6 @@
 """
 Intensity Interferometry Source Models
-=====================================
+======================================
 
 This module provides a comprehensive framework for intensity interferometry calculations
 based on the theoretical foundations from "Probing H0 and resolving AGN disks with 
@@ -19,7 +19,7 @@ Key Features
 - Proper normalization and units throughout
 
 Mathematical Framework
----------------------
+----------------------
 The core calculation is the simplified fringe visibility:
 
     V_simple(ν₀,B) = ∫ d²n̂ I(ν₀,n̂) exp(2πiB_⊥⋅n̂/λ₀) / ∫ d²n̂ I(ν₀,n̂)
@@ -89,13 +89,13 @@ class AbstractSource(ABC):
     g²(Δt) - 1 = |g¹(Δt)|².
     
     Methods to Implement
-    -------------------
+    --------------------
     intensity : Calculate specific intensity at given frequency and direction
     total_flux : Calculate total integrated flux at given frequency
     g2_minus_one : Calculate second-order temporal coherence function minus one
     
     Provided Methods
-    ---------------
+    ----------------
     V : Calculate fringe visibility using FFT (works for any intensity distribution)
     """
     

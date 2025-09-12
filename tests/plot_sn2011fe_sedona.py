@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from src.sources.sn2011fe_sedona import SedonaSN2011feSource
+    from g2.sources.sn2011fe_sedona import SedonaSN2011feSource
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import dependencies: {e}")
@@ -115,8 +115,8 @@ def get_source():
         current_dir = Path(__file__).parent
 
         # Try to use real Sedona data first
-        real_wave_file = os.path.join(current_dir, '../src/data/WaveGrid.npy')
-        real_flux_file = os.path.join(current_dir, '../src/data/Phase0Flux.npy')
+        real_wave_file = os.path.join(current_dir, '../g2/data/WaveGrid.npy')
+        real_flux_file = os.path.join(current_dir, '../g2/data/Phase0Flux.npy')
 
         if os.path.exists(real_wave_file) and os.path.exists(real_flux_file):
             wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]

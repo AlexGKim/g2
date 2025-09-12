@@ -9,7 +9,7 @@ measurement strategies for extracting spatial information from temporal correlat
 
 The calculations are based on the theoretical framework where the second-order
 coherence function g²(Δt) connects temporal correlations to spatial visibility
-through the relation g²(Δt) - 1 = |V(B)|².
+through the relation g²(Δt) - 1 = \|V(B)\|².
 
 Key Features
 ------------
@@ -19,7 +19,7 @@ Key Features
 - Support for different detector configurations and noise models
 
 Mathematical Framework
----------------------
+----------------------
 For chaotic sources, the inverse noise is related to the photon statistics
 and the coherence properties of the light. The Fisher information provides
 the theoretical lower bound on parameter estimation uncertainty through the
@@ -45,7 +45,7 @@ Usage Example
 
 import numpy as np
 from typing import Union, Tuple, Optional
-from source import ChaoticSource, AbstractSource
+from .source import ChaoticSource, AbstractSource
 
 
 def calculate_inverse_noise(source: ChaoticSource, 
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     """
     Example usage and validation of inverse noise calculations.
     """
-    from source import UniformDisk, PointSource
+    from .source import UniformDisk, PointSource
     
     # Create test sources
     disk = UniformDisk(flux_density=1e-26, radius=1e-8)  # ~2 mas disk

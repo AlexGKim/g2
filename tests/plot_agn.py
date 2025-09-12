@@ -33,7 +33,7 @@ except ImportError:
 try:
     import numpy as np
     import astropy.constants
-    from src.sources.agn import ShakuraSunyaevDisk, BroadLineRegion, RelativisticDisk, power_law_beta, lognormal_beta
+    from g2.sources.agn import ShakuraSunyaevDisk, BroadLineRegion, RelativisticDisk, power_law_beta, lognormal_beta
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import AGN dependencies: {e}")

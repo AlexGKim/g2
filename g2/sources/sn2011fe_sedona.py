@@ -459,8 +459,8 @@ def test_sedona_source():
         current_dir = Path(__file__).parent
 
         # Try to use real Sedona data first
-        real_wave_file = os.path.join(current_dir, '../src/data/WaveGrid.npy')
-        real_flux_file = os.path.join(current_dir, '../src/data/Phase0Flux.npy')
+        real_wave_file = os.path.join(current_dir, '../g2/data/WaveGrid.npy')
+        real_flux_file = os.path.join(current_dir, '../g2/data/Phase0Flux.npy')
         
         try:
             wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
