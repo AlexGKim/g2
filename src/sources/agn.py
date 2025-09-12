@@ -17,7 +17,7 @@ import os
 
 # Add parent directory to path to import source module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from source import ChaoticSource
+from src.source import ChaoticSource
 
 
 class ShakuraSunyaevDisk(ChaoticSource):
@@ -69,7 +69,14 @@ class ShakuraSunyaevDisk(ChaoticSource):
 
         self.cos_phi_B = np.cos(phi_B)
         self.sin_phi_B = np.sin(phi_B)  
-    
+
+    def get_params(self) -> dict:
+        """
+        The parameters that define the source model, particularly those that
+        may be varied in fitting or optimization.
+        """
+        pass
+
     def _f_function(self, R: float) -> float:
         """Calculate f(R) from Equation (22)"""
         if R <= self.R_in:
@@ -259,7 +266,14 @@ class BroadLineRegion(ChaoticSource):
         self.cos_i = np.cos(inclination)
         self.sin_i = np.sin(inclination)
         self.c = 2.99792458e8
-    
+
+    def get_params(self) -> dict:
+        """
+        The parameters that define the source model, particularly those that
+        may be varied in fitting or optimization.
+        """
+        pass
+
     def _keplerian_velocity(self, R: float, phi: float) -> float:
         """
         Calculate line-of-sight Keplerian velocity - Equation (37)

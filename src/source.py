@@ -133,8 +133,6 @@ class AbstractSource(ABC):
         """
         pass
 
-    @abstractmethod
-
     def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None ) -> complex:
         """
         The visibility that corresponds to the intensity distribution.
@@ -142,7 +140,7 @@ class AbstractSource(ABC):
         There is a general implementation using FFT provided in this base class
         V_fft    
         """
-        pass
+        self.V_fft(nu_0, baseline, params=params)
 
     @abstractmethod
     def total_flux(self, nu: float) -> float:
