@@ -16,7 +16,12 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import j1
-from source import PointSource, UniformDisk, ChaoticSource
+import sys, os
+
+# Add parent directory to path to import source module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.source import PointSource, UniformDisk, ChaoticSource
 import matplotlib.patches as patches
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -418,7 +423,7 @@ def main():
     
     try:
         # Create PDF file
-        with PdfPages('plots_source.pdf') as pdf:
+        with PdfPages('plot_source.pdf') as pdf:
             print("1. Plotting Airy function vs zeta parameter...")
             fig1 = plot_airy_function_vs_zeta()
             pdf.savefig(fig1, bbox_inches='tight')

@@ -140,7 +140,7 @@ class AbstractSource(ABC):
         There is a general implementation using FFT provided in this base class
         V_fft    
         """
-        self.V_fft(nu_0, baseline, params=params)
+        return self.V_fft(nu_0, baseline)
 
     @abstractmethod
     def total_flux(self, nu: float) -> float:
@@ -342,6 +342,7 @@ class AbstractSource(ABC):
         v_idx = v_freq / freq_resolution + grid_size // 2
         
         # Interpolate FFT result at the desired spatial frequency
+
         return self._bilinear_interpolate(intensity_fft, u_idx, v_idx)
     
     def _bilinear_interpolate(self, grid: np.ndarray, x: float, y: float) -> complex:
