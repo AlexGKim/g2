@@ -1,5 +1,5 @@
 .. g2 documentation master file, created by
-   sphinx-quickstart on Fri Sep 12 10:04:19 2025.
+   sphinx-quickstart on Fri Sep 12 15:51:09 2025.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
@@ -15,3 +15,5 @@ documentation for details.
    :maxdepth: 2
    :caption: Contents:
 
+   usage
+   api
