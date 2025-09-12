@@ -9,7 +9,10 @@ measurement strategies for extracting spatial information from temporal correlat
 
 The calculations are based on the theoretical framework where the second-order
 coherence function g²(Δt) connects temporal correlations to spatial visibility
-through the relation g²(Δt) - 1 = \|V(B)\|².
+through the relation 
+
+.. math::
+    g²(Δt) - 1 = |V(B)|².
 
 Key Features
 ------------
