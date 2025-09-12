@@ -10,6 +10,8 @@ from typing import Union
 import sys
 import os
 import sncosmo
+from pathlib import Path
+
 
 # Add parent directory to path to import source module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -453,9 +455,12 @@ def test_sedona_source():
     print("=" * 40)
     
     try:
-        # Load the data files first
-        wave_grid_file = "data/WaveGrid.npy"
-        flux_file = "data/Phase0Flux.npy"
+        # Get the current file's directory
+        current_dir = Path(__file__).parent
+
+        # Try to use real Sedona data first
+        real_wave_file = os.path.join(current_dir, '../src/data/WaveGrid.npy')
+        real_flux_file = os.path.join(current_dir, '../src/data/Phase0Flux.npy')
         
         try:
             wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]

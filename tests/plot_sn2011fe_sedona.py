@@ -23,13 +23,13 @@ from matplotlib.backends.backend_pdf import PdfPages
 import sys
 import os
 import tempfile
+from pathlib import Path
 
 # Add parent directory to path to import source module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from sources.sn2011fe_sedona import SedonaSN2011feSource
-    from intensity_interferometry_core import IntensityInterferometry
+    from src.sources.sn2011fe_sedona import SedonaSN2011feSource
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import dependencies: {e}")
@@ -110,9 +110,13 @@ def create_mock_data():
 def get_source():
     """Get a SedonaSN2011feSource instance, using real data if available, mock data otherwise"""
     try:
+
+        # Get the current file's directory
+        current_dir = Path(__file__).parent
+
         # Try to use real Sedona data first
-        real_wave_file = 'data/WaveGrid.npy'
-        real_flux_file = 'data/Phase0Flux.npy'
+        real_wave_file = os.path.join(current_dir, '../src/data/WaveGrid.npy')
+        real_flux_file = os.path.join(current_dir, '../src/data/Phase0Flux.npy')
 
         if os.path.exists(real_wave_file) and os.path.exists(real_flux_file):
             wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
@@ -710,6 +714,7 @@ def plot_integration_tests():
                     label, ha='center', va='bottom', fontsize=8, rotation=45)
         
     except Exception as e:
+        print(e)
         for i, ax in enumerate([ax1, ax2, ax3, ax4]):
             ax.text(0.5, 0.5, f'Integration test {i+1}\nError: {str(e)[:30]}...', 
                    ha='center', va='center', transform=ax.transAxes, fontsize=10)
@@ -782,7 +787,7 @@ def main():
         return
     
     try:
-        with PdfPages('sources/plot_sn2011fe_sedona.pdf') as pdf:
+        with PdfPages('plot_sn2011fe_sedona.pdf') as pdf:
             print("1. Creating data loading and initialization plots...")
             fig1 = plot_data_loading_and_initialization()
             pdf.savefig(fig1, bbox_inches='tight')
@@ -798,15 +803,15 @@ def main():
             pdf.savefig(fig3, bbox_inches='tight')
             plt.close(fig3)
             
-            # print("4. Creating chaotic source inheritance plots...")
-            # fig4 = plot_chaotic_source_inheritance()
-            # pdf.savefig(fig4, bbox_inches='tight')
-            # plt.close(fig4)
+            print("4. Creating chaotic source inheritance plots...")
+            fig4 = plot_chaotic_source_inheritance()
+            pdf.savefig(fig4, bbox_inches='tight')
+            plt.close(fig4)
             
-            # print("5. Creating integration test plots...")
-            # fig5 = plot_integration_tests()
-            # pdf.savefig(fig5, bbox_inches='tight')
-            # plt.close(fig5)
+            print("5. Creating integration test plots...")
+            fig5 = plot_integration_tests()
+            pdf.savefig(fig5, bbox_inches='tight')
+            plt.close(fig5)
             
             # Add metadata
             d = pdf.infodict()
