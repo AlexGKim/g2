@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 :math:`g^{(2)}` Documentation
-================
+=============================
 
 Package for the calculation of Hanbury-Brown Twiss and intensity interferometry obserables
 and signal-to-noise in astronomcial observations.
