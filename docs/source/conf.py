@@ -1,7 +1,13 @@
 import os, sys
 from pathlib import Path
 # sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, os.path.abspath('../..'))
+#sys.path.insert(0, os.path.abspath('../..'))
+if os.environ.get('READTHEDOCS'):
+    # On Read the Docs
+    sys.path.insert(0, os.path.abspath('../../g2'))
+else:
+    # Local development - use your current working path
+    sys.path.insert(0, os.path.abspath('../..'))  # or whatever works locally
 
 print("Python path:", sys.path)
 print("Current directory:", os.getcwd())
