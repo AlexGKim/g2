@@ -3,6 +3,14 @@ from pathlib import Path
 # sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, os.path.abspath('../..'))
 
+print("Python path:", sys.path)
+print("Current directory:", os.getcwd())
+try:
+    import g2
+    print("g2 import successful:", g2.__file__)
+except Exception as e:
+    print("g2 import failed:", e)
+
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
