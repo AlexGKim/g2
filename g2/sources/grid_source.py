@@ -12,11 +12,10 @@ import os
 import sncosmo
 from pathlib import Path
 
-
-from .source import ChaoticSource
+from . import source
 from scipy.interpolate import interp1d
 
-class GridSource(ChaoticSource):
+class GridSource(source.ChaoticSource):
     """
     Sedona model source for SN2011fe using numpy data files with FFT-based visibility calculation
     

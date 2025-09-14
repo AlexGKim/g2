@@ -17,10 +17,10 @@ import os
 
 # Add parent directory to path to import source module
 # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from .source import ChaoticSource
+from . import source
 
 
-class ShakuraSunyaevDisk(ChaoticSource):
+class ShakuraSunyaevDisk(source.ChaoticSource):
     """
     Simplified Shakura-Sunyaev accretion disk model - Equations (21-22)
     
@@ -226,7 +226,7 @@ class ShakuraSunyaevDisk(ChaoticSource):
         return complex(visibility.real, 0.0)
 
 
-class BroadLineRegion(ChaoticSource):
+class BroadLineRegion(source.ChaoticSource):
     """
     Simplified Broad Line Region model for AGN - Section IV
     
