@@ -448,6 +448,7 @@ class SedonaSN2011feSource(ChaoticSource):
         except ImportError:
             print("matplotlib not available for plotting")
 
+
 def test_sedona_source():
     """Test the Sedona SN2011fe source implementation"""
     
@@ -531,6 +532,18 @@ def test_sedona_source():
         import traceback
         traceback.print_exc()
         return None
+
+def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
+        # Get the current file's directory
+        current_dir = Path(__file__).parent
+
+        # Try to use real Sedona data first
+        real_wave_file = os.path.join(current_dir, '../data/WaveGrid.npy')
+        real_flux_file = os.path.join(current_dir, '../data/Phase0Flux.npy')
+
+        return create_sedona_source_from_files(wave_grid_file=real_wave_file,
+                                                 flux_file =real_flux_file,
+                                                 B=B,  distance=distance)
 
 def create_sedona_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
                                    flux_file: str = "../data/Phase0Flux.npy",

@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from g2.sources.sn2011fe_sedona import SedonaSN2011feSource
+    from g2.sources.sn2011fe_sedona import SedonaSN2011feSource, getSN2011feSource
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import dependencies: {e}")
@@ -105,11 +105,18 @@ def create_mock_data():
         flux_3d[i, :, :] = flux_val * spatial_profile * 1e-15  # erg/s/cm²/Å
     
     return wavelengths, flux_3d
+from g2.sources.sn2011fe_sedona import SedonaSN2011feSource, getSN2011feSource
 
+source = getSN2011feSource() 
 
 def get_source():
     """Get a SedonaSN2011feSource instance, using real data if available, mock data otherwise"""
+
+    source = getSN2011feSource() 
+    data_type = "Real Sedona Data"
+    return source, data_type
     try:
+
 
         # Get the current file's directory
         current_dir = Path(__file__).parent
