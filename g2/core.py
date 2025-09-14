@@ -348,7 +348,7 @@ if __name__ == "__main__":
     """
     Example usage and validation of inverse noise calculations.
     """
-    from .source import UniformDisk, PointSource
+    from .sources.source import UniformDisk, PointSource
     
     # Create test sources
     disk = UniformDisk(flux_density=1e-26, radius=1e-8)  # ~2 mas disk
