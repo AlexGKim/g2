@@ -15,9 +15,7 @@ from typing import Union, Tuple, Optional
 import sys
 import os
 
-# Add parent directory to path to import source module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ..source import ChaoticSource
+from .source import ChaoticSource
 
 
 class ShakuraSunyaevDisk(ChaoticSource):
