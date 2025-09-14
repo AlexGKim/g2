@@ -48,7 +48,7 @@ Usage Example
 
 import numpy as np
 from typing import Union, Tuple, Optional
-from .source import ChaoticSource, AbstractSource
+from .sources.source import ChaoticSource, AbstractSource
 
 
 def calculate_inverse_noise(source: ChaoticSource, 
