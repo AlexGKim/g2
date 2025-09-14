@@ -18,7 +18,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from source import ChaoticSource
 from scipy.interpolate import interp1d
 
-class SedonaSN2011feSource(ChaoticSource):
+class GridSource(ChaoticSource):
     """
     Sedona model source for SN2011fe using numpy data files with FFT-based visibility calculation
     
@@ -472,7 +472,7 @@ def test_sedona_source():
             return None
         
         # Create the source with the new constructor
-        source = SedonaSN2011feSource(wavelength_grid, flux_data_3d)
+        source = GridSource(wavelength_grid, flux_data_3d)
         
         # Get spectrum info
         info = source.get_spectrum_info()
@@ -547,7 +547,7 @@ def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
 
 def create_sedona_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
                                    flux_file: str = "../data/Phase0Flux.npy",
-                                   B: float = 9.98, distance: float = 204379200000000.0) -> SedonaSN2011feSource:
+                                   B: float = 9.98, distance: float = 204379200000000.0) -> GridSource:
     """
     Convenience factory function to create SedonaSN2011feSource from data files.
     
@@ -573,7 +573,7 @@ def create_sedona_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy"
     wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
     flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
     
-    return SedonaSN2011feSource(wavelength_grid, flux_data_3d, B, distance)
+    return GridSource(wavelength_grid, flux_data_3d, B, distance)
 
 if __name__ == "__main__":
     # Test the implementation

@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from g2.sources.sn2011fe_sedona import SedonaSN2011feSource, getSN2011feSource
+    from g2.sources.sn2011fe_sedona import GridSource, getSN2011feSource
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import dependencies: {e}")
@@ -105,7 +105,7 @@ def create_mock_data():
         flux_3d[i, :, :] = flux_val * spatial_profile * 1e-15  # erg/s/cm²/Å
     
     return wavelengths, flux_3d
-from g2.sources.sn2011fe_sedona import SedonaSN2011feSource, getSN2011feSource
+from g2.sources.sn2011fe_sedona import GridSource, getSN2011feSource
 
 source = getSN2011feSource() 
 
@@ -129,7 +129,7 @@ def get_source():
             wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
             flux_data = np.flip(np.load(real_flux_file),axis=0)  # [erg/s/cm²/Å] - 3D array
             # Use real Sedona data
-            source = SedonaSN2011feSource(wavelength_grid, flux_data)
+            source = GridSource(wavelength_grid, flux_data)
             data_type = "Real Sedona Data"
         else:
             # Fallback to mock data
@@ -139,7 +139,7 @@ def get_source():
             flux_file = os.path.join(temp_dir, 'Phase0Flux.npy')
             np.save(wave_file, wavelengths)
             np.save(flux_file, flux_3d)
-            source = SedonaSN2011feSource(wave_file, flux_file)
+            source = GridSource(wave_file, flux_file)
             data_type = "Mock Data"
             
         return source, data_type
