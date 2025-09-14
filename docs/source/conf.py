@@ -5,6 +5,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 print("Python path:", sys.path)
 print("Current directory:", os.getcwd())
+
+# Mock imports for ReadTheDocs if dependencies are missing
+try:
+    import jax
+except ImportError:
+    import sys
+    from unittest.mock import MagicMock
+    sys.modules['jax'] = MagicMock()
+    sys.modules['jax.numpy'] = MagicMock()
+
+try:
+    import sncosmo
+except ImportError:
+    import sys
+    from unittest.mock import MagicMock
+    sys.modules['sncosmo'] = MagicMock()
+
 try:
     import g2
     print("g2 import successful:", g2.__file__)
@@ -34,6 +51,14 @@ extensions = [
     'sphinx.ext.autosummary',
 ]
 autosummary_generate = True
+
+# Mock imports for autodoc
+autodoc_mock_imports = [
+    'jax',
+    'jax.numpy',
+    'jaxlib',
+    'sncosmo',
+]
 
 templates_path = ['_templates']
 exclude_patterns = []
