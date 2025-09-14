@@ -448,6 +448,49 @@ class GridSource(ChaoticSource):
         except ImportError:
             print("matplotlib not available for plotting")
 
+    @staticmethod
+    def create_grid_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
+                                   flux_file: str = "../data/Phase0Flux.npy",
+                                   B: float = 9.98, distance: float = 204379200000000.0) -> "GridSource":
+        """
+        Convenience factory function to create SedonaSN2011feSource from data files.
+        
+        This maintains backward compatibility with the old constructor interface.
+        
+        Parameters
+        ----------
+        wave_grid_file : str
+            Path to WaveGrid.npy file containing wavelength grid [Angstrom]
+        flux_file : str
+            Path to Phase0Flux.npy file containing 3D flux data [erg/s/cm²/Å]
+        B : float
+            Magnitude for flux normalization
+        distance : float
+            Distance to source in meters
+            
+        Returns
+        -------
+        SedonaSN2011feSource
+            Configured source instance
+        """
+        # Load the data files
+        wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
+        flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+        
+        return GridSource(wavelength_grid, flux_data_3d, B, distance)
+    
+    @staticmethod
+    def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
+            # Get the current file's directory
+            current_dir = Path(__file__).parent
+
+            # Try to use real Sedona data first
+            real_wave_file = os.path.join(current_dir, '../data/WaveGrid.npy')
+            real_flux_file = os.path.join(current_dir, '../data/Phase0Flux.npy')
+
+            return GridSource.create_grid_source_from_files(wave_grid_file=real_wave_file,
+                                                    flux_file =real_flux_file,
+                                                    B=B,  distance=distance)
 
 def test_sedona_source():
     """Test the Sedona SN2011fe source implementation"""
@@ -533,47 +576,9 @@ def test_sedona_source():
         traceback.print_exc()
         return None
 
-def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
-        # Get the current file's directory
-        current_dir = Path(__file__).parent
 
-        # Try to use real Sedona data first
-        real_wave_file = os.path.join(current_dir, '../data/WaveGrid.npy')
-        real_flux_file = os.path.join(current_dir, '../data/Phase0Flux.npy')
 
-        return create_sedona_source_from_files(wave_grid_file=real_wave_file,
-                                                 flux_file =real_flux_file,
-                                                 B=B,  distance=distance)
 
-def create_sedona_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
-                                   flux_file: str = "../data/Phase0Flux.npy",
-                                   B: float = 9.98, distance: float = 204379200000000.0) -> GridSource:
-    """
-    Convenience factory function to create SedonaSN2011feSource from data files.
-    
-    This maintains backward compatibility with the old constructor interface.
-    
-    Parameters
-    ----------
-    wave_grid_file : str
-        Path to WaveGrid.npy file containing wavelength grid [Angstrom]
-    flux_file : str
-        Path to Phase0Flux.npy file containing 3D flux data [erg/s/cm²/Å]
-    B : float
-        Magnitude for flux normalization
-    distance : float
-        Distance to source in meters
-        
-    Returns
-    -------
-    SedonaSN2011feSource
-        Configured source instance
-    """
-    # Load the data files
-    wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
-    flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
-    
-    return GridSource(wavelength_grid, flux_data_3d, B, distance)
 
 if __name__ == "__main__":
     # Test the implementation
