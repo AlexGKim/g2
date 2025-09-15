@@ -34,9 +34,20 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 
+autodoc_default_options = {
+    'members': True,
+    'member-order': 'bysource',
+    'undoc-members': True,
+    'show-inheritance': True,
+    'imported-members': True,  # This is key!
+}
+
+
+# -- Options for EPUB output
+epub_show_urls = "footnote"
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-# html_theme = 'alabaster'
-# html_static_path = ['_static']
+html_theme = 'alabaster'
+html_static_path = ['_static']

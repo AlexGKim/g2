@@ -5,5 +5,5 @@ API
    :toctree: _autosummary
    :recursive:
 
-   g2
-
+   g2.core
+   g2.models

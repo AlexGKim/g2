@@ -12,14 +12,14 @@ coherence function g²(Δt) connects temporal correlations to spatial visibility
 through the relation 
 
 .. math::
-    g²(Δt) - 1 = |V(B)|².
+    g²(Δt) - 1 = \\|V(B)\\|².
 
 Key Features
 ------------
-- Fisher information matrix calculation for chaotic sources
-- Signal-to-noise ratio estimation for visibility measurements
-- Optimal baseline and integration time calculations
-- Support for different detector configurations and noise models
+* Fisher information matrix calculation for chaotic sources
+* Signal-to-noise ratio estimation for visibility measurements  
+* Optimal baseline and integration time calculations
+* Support for different detector configurations and noise models
 
 Mathematical Framework
 ----------------------
@@ -30,20 +30,22 @@ Cramér-Rao bound.
 
 Usage Example
 -------------
->>> from source import UniformDisk
->>> from inverse_noise_chaotic import calculate_inverse_noise
->>> 
->>> # Create a uniform disk source
->>> disk = UniformDisk(flux_density=1e-26, radius=1e-8)
->>> 
->>> # Calculate inverse noise for a baseline measurement
->>> baseline = np.array([100.0, 0.0, 0.0])
->>> nu_0 = 5e14  # 600 nm
->>> delta_nu = 1e12  # 1 THz bandwidth
->>> integration_time = 3600  # 1 hour
->>> 
->>> inv_noise = calculate_inverse_noise(disk, nu_0, baseline, delta_nu, integration_time)
->>> print(f"Inverse noise: {inv_noise:.2e}")
+.. code-block:: python
+
+    from source import UniformDisk
+    from inverse_noise_chaotic import calculate_inverse_noise
+    
+    # Create a uniform disk source
+    disk = UniformDisk(flux_density=1e-26, radius=1e-8)
+    
+    # Calculate inverse noise for a baseline measurement
+    baseline = np.array([100.0, 0.0, 0.0])
+    nu_0 = 5e14  # 600 nm
+    delta_nu = 1e12  # 1 THz bandwidth
+    integration_time = 3600  # 1 hour
+    
+    inv_noise = calculate_inverse_noise(disk, nu_0, baseline, delta_nu, integration_time)
+    print(f"Inverse noise: {inv_noise:.2e}")
 """
 
 import numpy as np
@@ -100,6 +102,7 @@ def calculate_inverse_noise(source: ChaoticSource,
     For chaotic sources, the variance in intensity measurements is related
     to the mean intensity and the coherence properties through:
     
+    .. math::
         σ²(I) = ⟨I⟩² × (1 + g²(0)) / (δν × τ)
     
     where g²(0) = 2 for thermal light, δν is the bandwidth, and τ is
@@ -324,7 +327,9 @@ def calculate_fisher_matrix(source: ChaoticSource,
     Notes
     -----
     The Fisher matrix elements are calculated as:
-        F_ij = Σ_k (∂V_k/∂θ_i)(∂V_k/∂θ_j) / σ²_k
+    
+    .. math::
+        F_{ij} = Σ_k (∂V_k/∂θ_i)(∂V_k/∂θ_j) / σ²_k
     
     where V_k is the visibility for baseline k, θ_i are the parameters,
     and σ²_k is the measurement variance for baseline k.
