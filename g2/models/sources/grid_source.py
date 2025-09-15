@@ -1,8 +1,6 @@
 """
-Sedona SN2011fe Source Model for Intensity Interferometry
-
-Implementation of ChaoticSource using Sedona model data
-for SN2011fe with WaveGrid.npy and Phase0Flux.npy files.
+Source Model for a spatial grid of the intensity profile
+=========================================================
 """
 
 import numpy as np

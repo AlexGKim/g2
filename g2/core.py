@@ -1,6 +1,6 @@
 """
-Inverse Noise Calculation for Chaotic Sources
-=============================================
+Functions for HBT and II calculations (chaotic sources)
+=======================================================
 
 This module provides functions to calculate the inverse noise (Fisher information)
 for intensity interferometry measurements with chaotic (thermal) light sources.
@@ -99,6 +99,7 @@ def calculate_inverse_noise(source: ChaoticSource,
     
     For chaotic sources, the variance in intensity measurements is related
     to the mean intensity and the coherence properties through:
+    
         σ²(I) = ⟨I⟩² × (1 + g²(0)) / (δν × τ)
     
     where g²(0) = 2 for thermal light, δν is the bandwidth, and τ is
