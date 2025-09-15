@@ -12,7 +12,7 @@ import os
 import sncosmo
 from pathlib import Path
 
-from . import source
+from ..base import source
 from scipy.interpolate import interp1d
 
 class GridSource(source.ChaoticSource):
@@ -482,8 +482,8 @@ class GridSource(source.ChaoticSource):
             current_dir = Path(__file__).parent
 
             # Try to use real Sedona data first
-            real_wave_file = os.path.join(current_dir, '../data/WaveGrid.npy')
-            real_flux_file = os.path.join(current_dir, '../data/Phase0Flux.npy')
+            real_wave_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
+            real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
 
             return GridSource.create_grid_source_from_files(wave_grid_file=real_wave_file,
                                                     flux_file =real_flux_file,

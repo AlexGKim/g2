@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock
 
 # Add sources directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from agn import ShakuraSunyaevDisk, BroadLineRegion, RelativisticDisk, power_law_beta, lognormal_beta
+from g2.models.agn import ShakuraSunyaevDisk, BroadLineRegion, RelativisticDisk, power_law_beta, lognormal_beta
 
 
 class TestShakuraSunyaevDisk(unittest.TestCase):

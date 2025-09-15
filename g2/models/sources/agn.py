@@ -16,8 +16,7 @@ import sys
 import os
 
 # Add parent directory to path to import source module
-# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from . import source
+from ..base import source
 
 
 class ShakuraSunyaevDisk(source.ChaoticSource):

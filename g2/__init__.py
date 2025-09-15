@@ -1,2 +1,1 @@
-from . import core
-from . import sources
+from .core import *
