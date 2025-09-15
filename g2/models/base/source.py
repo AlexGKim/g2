@@ -198,6 +198,8 @@ class AbstractSource(ABC):
         For most implementations, this can be calculated analytically from the
         source parameters. The result should be consistent with numerical
         integration of the intensity() method over the sky.
+
+        Think about implementing a general implementation here.
         """
         pass
     
