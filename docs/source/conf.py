@@ -40,6 +40,7 @@ autodoc_default_options = {
     'undoc-members': True,
     'show-inheritance': True,
     'imported-members': True,  # This is key!
+    'exclude-members': 'abstractmethod,ABC,quad,dblquad,fft2,ifft2,fftfreq,fftshift,ifftshift,RegularGridInterpolator,dataclass,Any,interp1d,Union,Optional,Tuple,Callable,Dict',
 }
 
 

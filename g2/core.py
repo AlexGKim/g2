@@ -12,6 +12,7 @@ coherence function g²(Δt) connects temporal correlations to spatial visibility
 through the relation 
 
 .. math::
+
     g²(Δt) - 1 = \\|V(B)\\|².
 
 Key Features

@@ -171,8 +171,7 @@ class UniformDisk(ChaoticSource):
     astronomical objects.
     
     The intensity distribution is:
-        I(ν, n̂) = I₀  for |n̂| ≤ θ
-                 = 0   for |n̂| > θ
+        I(ν, n̂) = I₀
     
     where I₀ is the surface brightness and θ is the angular radius.
     
@@ -202,7 +201,7 @@ class UniformDisk(ChaoticSource):
     >>> for B in [10, 100, 1000]:  # meters
     >>>     baseline = np.array([B, 0.0, 0.0])
     >>>     vis = disk.visibility(5e14, baseline)
-    >>>     print(f"B={B}m: |V|={abs(vis):.3f}")
+    >>>     print(f"B={B}m: \\|V\\|={abs(vis):.3f}")
     """
     
     def __init__(self, flux_density: float, radius: float):
@@ -275,7 +274,7 @@ class UniformDisk(ChaoticSource):
         
             V(u) = 2J₁(2πuθ) / (2πuθ)
         
-        where J₁ is the first-order Bessel function, u = |B_⊥|/λ is the
+        where J₁ is the first-order Bessel function, u = \\|B_⊥\\|/λ is the
         spatial frequency, and θ is the disk radius.
         
         Parameters
@@ -301,7 +300,7 @@ class UniformDisk(ChaoticSource):
         method and doesn't suffer from discretization artifacts.
         
         The first zero of the visibility function occurs at:
-            u = 1.22/(2θ)  or  |B_⊥| = 1.22λ/(2θ)
+            u = 1.22/(2θ)  or  \\|B_⊥\\| = 1.22λ/(2θ)
         
         This corresponds to the classical resolution limit for circular apertures.
         """
@@ -318,7 +317,7 @@ class UniformDisk(ChaoticSource):
         baseline_perp = baseline[:2]
         baseline_length = jnp.linalg.norm(baseline_perp)
         
-        # Calculate spatial frequency u = |B_⊥|/λ
+        # Calculate spatial frequency u = \\|B_⊥\\|/λ
         u = baseline_length / wavelength
         
         # Calculate argument for Bessel function: x = 2πuθ

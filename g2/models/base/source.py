@@ -237,11 +237,15 @@ class AbstractSource(ABC):
         Notes
         -----
         The second-order coherence function is defined as:
+        
+        .. math::
             g²(Δt) = ⟨I(t)I(t+Δt)⟩ / I₀²
         
         where I₀ = ⟨I(t)⟩ is the mean intensity.
         
         For intensity interferometry, the key relation is:
+
+        .. math::
             g²(Δt) - 1 = \\|g¹(Δt)\\|²
         
         where g¹(Δt) relates to the spatial visibility function V(B) through the
@@ -278,7 +282,7 @@ class AbstractSource(ABC):
 
     def V_squared(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> float:
         """
-        Calculate squared visibility magnitude \\|V\\||².
+        Calculate squared visibility magnitude \\|V\\|².
         
         The spatial dependence of the intensity interferometry signal (function 
         of baseline) is directly proportional to \\|V\\|².
@@ -480,6 +484,7 @@ class ChaoticSource(AbstractSource):
     the spectral power distribution within the measurement bandwidth.
     
     The g² function is implemented as:
+
         g²(ν₀, Δν) = FT[tophat(ν₀, Δν)]/Δν
     
     where FT[tophat] is the
@@ -533,8 +538,10 @@ class ChaoticSource(AbstractSource):
             
         Notes
         -----
-        The implementation uses::
+        The implementation uses
         
+        .. math::
+
             g¹(Δt) = sinc(π × Δν × Δt)
         
         where the sinc function arises from the Fourier transform of the
@@ -544,7 +551,7 @@ class ChaoticSource(AbstractSource):
         - At large Δt: g¹(∞) → 0 (no coherence)
         
         The first-order coherence function is fundamental to the second-order
-        correlations measured in intensity interferometry through the relation::
+        correlations measured in intensity interferometry through the relation:
         
             g²(Δt) - 1 = \\|g¹(Δt)\\|²
         """
@@ -586,6 +593,8 @@ class ChaoticSource(AbstractSource):
         Notes
         -----
         The implementation uses:
+
+        .. math::
             g²(Δt) - 1 = \\|g¹(Δt)\\|²
         
         where g¹(Δt) is the first-order temporal coherence function.
@@ -594,14 +603,16 @@ class ChaoticSource(AbstractSource):
         - At large Δt: g²(∞) - 1 → \\|g¹(∞)\\|² = 0 (no excess correlation)
         
         The key relation for intensity interferometry is:
+
+        .. math::
             g²(Δt) - 1 = \\|V(B)\\|² = \\|g¹(Δt)\\|²
         
         where V(B) is the spatial visibility function (Equation 8). This connects
         the temporal correlations measured by g²-1 to the spatial structure through
         the first-order coherence function.
         """
-        # Calculate g²(Δt) - 1 = |g¹(Δt)|² - 1
-        # For chaotic light: g²(Δt) = 1 + |g¹(Δt)|², so g²(Δt) - 1 = |g¹(Δt)|²
+        # Calculate g²(Δt) - 1 = \\|g¹(Δt)\\|² - 1
+        # For chaotic light: g²(Δt) = 1 + \\|g¹(Δt)\\|², so g²(Δt) - 1 = \\|g¹(Δt)\\|²
         g1_value = self.g1(delta_t, nu_0, delta_nu)
         return abs(g1_value)**2
 
