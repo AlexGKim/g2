@@ -30,14 +30,6 @@ extensions = [
 ]
 autosummary_generate = True
 
-# Mock imports for autodoc
-# autodoc_mock_imports = [
-    # 'jax',
-    # 'jax.numpy',
-    # 'jaxlib',
-    # 'sncosmo',
-# ]
-
 templates_path = ['_templates']
 exclude_patterns = []
 
