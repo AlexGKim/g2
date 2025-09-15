@@ -1,3 +1,13 @@
 [build-system]
 requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
+
+[project]
+name = "g2"
+version = "0.1.0"
+description = "Library for HBT and Intensity Interferometry calculations"
+dependencies = [
+    "numpy",
+    "scipy", 
+    "jax",
+]
