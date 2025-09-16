@@ -15,3 +15,5 @@ sncosmo>=2.0.0
 # Additional dependencies that might be needed
 matplotlib>=3.5.0
 astropy>=5.0.0
+
+sphinx_copybutton
