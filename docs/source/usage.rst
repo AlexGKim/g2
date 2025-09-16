@@ -11,6 +11,12 @@ is no release.  Work with the main repository.
 
    (.venv) $ git clone git@github.com:AlexGKim/g2.git
 
+Install the Package
+
+.. code-block:: console
+
+   (.venv) $ cd g2
+   (.venv) $ pip install .
 
 quickstart
 ----------
@@ -31,3 +37,5 @@ and  :meth:`g2.models.base.source.AbstractSource.get_params`.
 There are several concrete classes
 available in :mod:`g2.models.sources`.
 
+.. literalinclude:: ../examples/uniform_disk.py
+   :language: python

@@ -57,11 +57,10 @@ from .models.base.source import ChaoticSource, AbstractSource
 def calculate_inverse_noise(source: ChaoticSource, 
                           nu_0: float, 
                           baseline: np.ndarray,
-                          delta_nu: float,
                           integration_time: float,
-                          detector_area: float = 1.0,
-                          quantum_efficiency: float = 1.0,
-                          dark_current: float = 0.0) -> float:
+                          telescope_area: float = 1.0,
+                          throughput: float = 1.0,
+                          detector_jitter: float = 0.0) -> float:
     """
     Calculate inverse noise (Fisher information) for chaotic source measurements.
     
@@ -78,16 +77,14 @@ def calculate_inverse_noise(source: ChaoticSource,
         Central frequency in Hz.
     baseline : array_like, shape (3,)
         Baseline vector in meters [Bx, By, Bz].
-    delta_nu : float
-        Frequency bandwidth in Hz.
     integration_time : float
         Integration time in seconds.
-    detector_area : float, optional
-        Effective detector area in m². Default is 1.0.
-    quantum_efficiency : float, optional
-        Detector quantum efficiency (0-1). Default is 1.0.
-    dark_current : float, optional
-        Dark current in electrons/s. Default is 0.0.
+    telescope_area : float, optional
+        Effective telescope area in m². Default is 1.0.
+    throughput : float, optional
+        System throughput efficiency (0-1). Default is 1.0.
+    detector_jitter : float, optional
+        Detector timing jitter parameter. Default is 0.0.
         
     Returns
     -------
@@ -121,94 +118,13 @@ def calculate_inverse_noise(source: ChaoticSource,
     
     # Get source flux and visibility
     flux = source.total_flux(nu_0)
-    visibility = source.visibility(nu_0, baseline)
-    visibility_magnitude = abs(visibility)
     
-    # Calculate photon rate
-    power = flux * detector_area * delta_nu
-    photon_rate = power / photon_energy * quantum_efficiency
+    # Calculate photon rate per frequency
+    photon_rate_per_nu = throughput * telescope_area * flux / photon_energy
     
-    # Total detected photons
-    total_photons = photon_rate * integration_time
-    
-    # Calculate coherence time
-    coherence_time = 1.0 / delta_nu
-    
-    # Number of independent measurements (coherence cells)
-    n_independent = integration_time / coherence_time
-    
-    # For chaotic light, g²(0) = 2
-    g2_zero = 2.0
-    
-    # Calculate signal and noise for intensity correlation measurement
-    # Signal: proportional to visibility squared
-    signal = visibility_magnitude**2
-    
-    # Noise: includes photon noise and detector noise
-    # For chaotic light, intensity variance is enhanced by factor (1 + g²(0))
-    photon_noise_variance = total_photons * (1 + g2_zero) / n_independent
-    dark_noise_variance = dark_current * integration_time
-    total_noise_variance = photon_noise_variance + dark_noise_variance
-    
-    # Fisher information (inverse noise) for visibility measurement
-    # This represents the theoretical sensitivity limit
-    if total_noise_variance > 0:
-        inverse_noise = (signal**2 * total_photons**2) / total_noise_variance
-    else:
-        inverse_noise = np.inf
+    inverse_noise = photon_rate_per_nu * np.sqrt(integration_time/detector_jitter) * (128 * np.pi)**(-0.25)
     
     return inverse_noise
-
-
-def calculate_snr_visibility(source: ChaoticSource,
-                           nu_0: float,
-                           baseline: np.ndarray,
-                           delta_nu: float,
-                           integration_time: float,
-                           detector_area: float = 1.0,
-                           quantum_efficiency: float = 1.0) -> float:
-    """
-    Calculate signal-to-noise ratio for visibility measurements.
-    
-    This function estimates the achievable SNR for measuring the spatial
-    visibility of a chaotic source using intensity interferometry.
-    
-    Parameters
-    ----------
-    source : ChaoticSource
-        The chaotic light source object.
-    nu_0 : float
-        Central frequency in Hz.
-    baseline : array_like, shape (3,)
-        Baseline vector in meters.
-    delta_nu : float
-        Frequency bandwidth in Hz.
-    integration_time : float
-        Integration time in seconds.
-    detector_area : float, optional
-        Effective detector area in m². Default is 1.0.
-    quantum_efficiency : float, optional
-        Detector quantum efficiency (0-1). Default is 1.0.
-        
-    Returns
-    -------
-    snr : float
-        Signal-to-noise ratio for visibility measurement.
-        
-    Notes
-    -----
-    The SNR calculation accounts for the enhanced noise in chaotic light
-    due to the bunching effect (g²(0) = 2) and the finite coherence time.
-    """
-    # Calculate inverse noise
-    inv_noise = calculate_inverse_noise(source, nu_0, baseline, delta_nu,
-                                      integration_time, detector_area,
-                                      quantum_efficiency)
-    
-    # SNR is the square root of Fisher information for Gaussian statistics
-    snr = np.sqrt(inv_noise)
-    
-    return snr
 
 
 def optimize_integration_time(source: ChaoticSource,

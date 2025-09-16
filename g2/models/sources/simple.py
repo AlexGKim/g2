@@ -1,8 +1,26 @@
 import numpy as np
 from typing import Callable, Union, Any, Dict
 import jax.numpy as jnp # Use JAX for array operations
+from jax import custom_jvp
+
+from scipy.special import j1, jv
 
 from ..base.source import ChaoticSource
+
+
+@custom_jvp
+def _j1(x):
+    """First-order Bessel function J1 using scipy.special.j1"""
+    return j1(x)
+
+@_j1.defjvp
+def _j1_jvp(primals, tangents):
+    """Custom JVP rule for J1 using scipy.special.jv"""
+    x, = primals
+    dx, = tangents
+    y = j1(x)
+    dy = y/x - jv(2, x) 
+    return y, dy * dx 
 
 class PointSource(ChaoticSource):
     """
@@ -320,15 +338,15 @@ class UniformDisk(ChaoticSource):
         # Calculate spatial frequency u = \\|B_⊥\\|/λ
         u = baseline_length / wavelength
         
-        # Calculate argument for Bessel function: x = 2πuθ
-        x = 2 * np.pi * u * params['radius']
-        
+        # Calculate argument for Bessel function: zeta = 2πuθ
+        zeta = np.pi * u * (2 * params['radius'])
         # Handle special case x=0 (zero baseline or zero radius)
-        if x == 0:
+        if zeta == 0:
             V_value = 1.0
         else:
             # Airy function: V(u) = 2J₁(x)/x
             # V_value = 2 * j1(x) / x
-            V_value = 2 * (jnp.sin(x) / x**2 - jnp.cos(x) / x) / x  
+            V_value = 2 * _j1(zeta) / zeta   
         # Return as complex number (phase is zero for symmetric disk)
         return V_value + 0.0j
+    

@@ -27,6 +27,7 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
+    'sphinx_copybutton',
 ]
 autosummary_generate = True
 
