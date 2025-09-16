@@ -67,7 +67,7 @@ its partials with respect to the source parameters which are
 needed in a Fisher matrix analysis (call to :meth:`g2.models.base.source.AbstractSource.V_squared_jacobian`),
 and the signal noise for a given set of observing parameters (call to :meth:`g2.core.inverse_noise`).
 
-The function :func:`g2.utils.summary` is
+The summary function is
 
 .. literalinclude:: ../examples/examples_source.py
    :start-after: # summary-begin
