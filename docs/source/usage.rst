@@ -28,9 +28,6 @@ Install the Package
 quickstart
 ----------
 
-The Basics
-^^^^^^^^^^
-
 The objective is to determine quantities related to the second-order coherence function :math:`g^{(2)}`
 and measurements thereof.  The current implementation is constrained to restrive conditions 
 listed in :ref:`index-label`, which simplify the required inputs and calculations.
