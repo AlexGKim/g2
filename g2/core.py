@@ -54,7 +54,7 @@ from typing import Union, Tuple, Optional
 from .models.base.source import ChaoticSource, AbstractSource
 
 
-def calculate_inverse_noise(source: ChaoticSource, 
+def inverse_noise(source: ChaoticSource, 
                           nu_0: float, 
                           baseline: np.ndarray,
                           integration_time: float,
@@ -256,7 +256,7 @@ def calculate_fisher_matrix(source: ChaoticSource,
     
     # Calculate inverse noise for each baseline
     for i in range(n_baselines):
-        inv_noise_i = calculate_inverse_noise(source, nu_0, baselines[i],
+        inv_noise_i = inverse_noise(source, nu_0, baselines[i],
                                             delta_nu, integration_time,
                                             detector_area, quantum_efficiency)
         fisher_matrix[i, i] = inv_noise_i
@@ -300,7 +300,7 @@ if __name__ == "__main__":
         for baseline in baselines:
             baseline_length = np.linalg.norm(baseline[:2])
             visibility = source.visibility(nu_0, baseline)
-            inv_noise = calculate_inverse_noise(source, nu_0, baseline, delta_nu,
+            inv_noise = inverse_noise(source, nu_0, baseline, delta_nu,
                                               integration_time, detector_area)
             snr = calculate_snr_visibility(source, nu_0, baseline, delta_nu,
                                          integration_time, detector_area)
