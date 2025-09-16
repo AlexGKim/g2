@@ -4,6 +4,13 @@ Usage
 Installation
 ------------
 
+You may or may not want to install in a virtual environment.  If you do, create and activate
+a virtual environment first.  For example, with conda
+
+.. code-block:: console
+
+   $ conda create -n g2 python=3.10
+
 To use g2, first install it from GitHub.  As we are completely starting there
 is no release.  Work with the main repository.
 
@@ -37,11 +44,37 @@ and  :meth:`g2.models.base.source.AbstractSource.get_params`.
 There are several concrete classes
 available in :mod:`g2.models.sources`.
 
+Examples
+^^^^^^^^
 
-.. include:: ../examples/uniform_disk.py
-   :start-after: """
-   :end-before: """
+A simple example is a uniform disk source, which is implemented in :class:`g2.models.sources.simple.UniformDisk`.
 
-.. literalinclude:: ../examples/uniform_disk.py
+.. literalinclude:: ../examples/examples_source.py
+   :start-after: # uniform_disk-begin
+   :end-before: # uniform_disk-end
    :language: python
-   :start-after: # docstring-end
+
+Another example is a more complex source model based on a spatial grid of intensity profiles
+from a supernova simulation.  This is implemented in :class:`g2.models.sources.grid_source.GridSource`,
+which has a class method to instantiate a source based on the Type Ia supernova SN2011fe.
+
+.. literalinclude:: ../examples/examples_source.py
+   :start-after: # sn2011fe-begin
+   :end-before: # sn2011fe-end
+   :language: python
+
+Some of the information that can be accessed from a source is demonstrated with the call
+
+.. literalinclude:: ../examples/examples_source.py
+   :start-after: # summary-call-begin
+   :end-before: # summary-call-end
+   :language: python
+
+where the function :func:`g2.utils.summary` is
+
+.. literalinclude:: ../examples/examples_source.py
+   :start-after: # summary-begin
+   :end-before: # summary-end
+   :language: python
+
+The full example code is in :file:`docs/examples/examples_source.py`.
