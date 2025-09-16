@@ -20,14 +20,16 @@ bandpass, detector jitter, throughput, and exposure time.
 
 The current implementation is restricted to several conditions:
 
+- The source is spatially incoherent.
 - The source is chaotic.
 - The source is unpolarized.
+- The source has small angular size.
 - The detector timing jitter is Gaussian with standard deviation :math:`\sigma_t` .
 - The bandwidth :math:`\Delta\omega` is sufficiently narrow such that :math:`I_\nu` does not vary across the bandpass.
 - The bandwidth :math:`\Delta\omega` is sufficiently narrow such that :math:`\sigma_t \Delta\omega \gg 1`.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: Contents:
 
    usage
