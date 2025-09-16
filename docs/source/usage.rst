@@ -33,12 +33,7 @@ and measurements thereof.  The current implementation is constrained to restrive
 listed in :ref:`index-label`, which simplify the required inputs and calculations.
 
 One condition is that the source be chaotic.  The source is then represented as an object of the 
-abstract base class :class:`g2.models.base.source.ChaoticSource`.  The methods that need to
-be specified are :meth:`g2.models.base.source.AbstractSource.intensity`, :meth:`g2.models.base.source.AbstractSource.total_flux`,
-and  :meth:`g2.models.base.source.AbstractSource.get_params`. 
-
-
-There are several concrete classes
+abstract base class :class:`g2.models.base.source.ChaoticSource`.  There are several concrete classes
 available in :mod:`g2.models.sources`.
 
 Examples
@@ -53,7 +48,7 @@ A simple example is a uniform disk source, which is implemented in :class:`g2.mo
 
 Another example is a more complex source model based on a spatial grid of intensity profiles
 from a supernova simulation.  This is implemented in :class:`g2.models.sources.grid_source.GridSource`,
-which has a class method to instantiate a source based on the Type Ia supernova SN2011fe.
+which has a class method to instantiate a source based on the Sedona model of Type Ia supernova SN2011fe.
 
 .. literalinclude:: ../examples/examples_source.py
    :start-after: # sn2011fe-begin
@@ -67,7 +62,12 @@ Some of the information that can be accessed from a source is demonstrated with 
    :end-before: # summary-call-end
    :language: python
 
-where the function :func:`g2.utils.summary` is
+Of note are the HBT signal :math:`|V|^2` (call to :meth:`g2.models.base.source.AbstractSource.V_squared`),
+its partials with respect to the source parameters which are
+needed in a Fisher matrix analysis (call to :meth:`g2.models.base.source.AbstractSource.V_squared_jacobian`),
+and the signal noise for a given set of observing parameters (call to :meth:`g2.core.inverse_noise`).
+
+The function :func:`g2.utils.summary` is
 
 .. literalinclude:: ../examples/examples_source.py
    :start-after: # summary-begin

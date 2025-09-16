@@ -1,5 +1,5 @@
 import numpy as np
-from g2 import calculate_inverse_noise
+from g2 import inverse_noise
 
 # summary-begin
 def summary(source):
@@ -34,7 +34,7 @@ def summary(source):
 
     # Calculate noise
     print("Inverse noise (SNR) for 1 hour integration:", end=" ")
-    print(calculate_inverse_noise(source, nu_0, baseline, integration_time, telescope_area=telescope_area,
+    print(inverse_noise(source, nu_0, baseline, integration_time, telescope_area=telescope_area,
                                 throughput=throughput, detector_jitter=detector_jitter))
     
     return
