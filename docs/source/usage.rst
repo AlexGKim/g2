@@ -37,5 +37,11 @@ and  :meth:`g2.models.base.source.AbstractSource.get_params`.
 There are several concrete classes
 available in :mod:`g2.models.sources`.
 
+
+.. include:: ../examples/uniform_disk.py
+   :start-after: """
+   :end-before: """
+
 .. literalinclude:: ../examples/uniform_disk.py
    :language: python
+   :start-after: # docstring-end
