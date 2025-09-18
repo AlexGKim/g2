@@ -10,10 +10,10 @@ import os
 import sncosmo
 from pathlib import Path
 
-from ..base import abc
+from ..base import source
 from scipy.interpolate import interp1d
 
-class GridSource(abc.ChaoticSource):
+class GridSource(source.ChaoticSource):
     """
     Sedona model source for SN2011fe using numpy data files with FFT-based visibility calculation
     
@@ -487,89 +487,89 @@ class GridSource(abc.ChaoticSource):
                                                     flux_file =real_flux_file,
                                                     B=B,  distance=distance)
 
-def test_sedona_source():
-    """Test the Sedona SN2011fe source implementation"""
+# def test_sedona_source():
+#     """Test the Sedona SN2011fe source implementation"""
     
-    print("Testing Sedona SN2011fe Source")
-    print("=" * 40)
+#     print("Testing Sedona SN2011fe Source")
+#     print("=" * 40)
     
-    try:
-        # Get the current file's directory
-        current_dir = Path(__file__).parent
+#     try:
+#         # Get the current file's directory
+#         current_dir = Path(__file__).parent
 
-        # Try to use real Sedona data first
-        real_wave_file = os.path.join(current_dir, '../g2/data/WaveGrid.npy')
-        real_flux_file = os.path.join(current_dir, '../g2/data/Phase0Flux.npy')
+#         # Try to use real Sedona data first
+#         real_wave_file = os.path.join(current_dir, '../g2/data/WaveGrid.npy')
+#         real_flux_file = os.path.join(current_dir, '../g2/data/Phase0Flux.npy')
         
-        try:
-            wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
-            flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
-        except FileNotFoundError as e:
-            print(f"❌ Could not load Sedona data files: {e}")
-            print("Please ensure WaveGrid.npy and Phase0Flux.npy are in the ../data/ directory")
-            return None
+#         try:
+#             wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
+#             flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+#         except FileNotFoundError as e:
+#             print(f"❌ Could not load Sedona data files: {e}")
+#             print("Please ensure WaveGrid.npy and Phase0Flux.npy are in the ../data/ directory")
+#             return None
         
-        # Create the source with the new constructor
-        source = GridSource(wavelength_grid, flux_data_3d)
+#         # Create the source with the new constructor
+#         source = GridSource(wavelength_grid, flux_data_3d)
         
-        # Get spectrum info
-        info = source.get_spectrum_info()
-        print(f"\nSpectrum Information:")
-        for key, value in info.items():
-            if isinstance(value, tuple):
-                print(f"  {key}: {value[0]:.2e} - {value[1]:.2e}")
-            else:
-                print(f"  {key}: {value:.2e}")
+#         # Get spectrum info
+#         info = source.get_spectrum_info()
+#         print(f"\nSpectrum Information:")
+#         for key, value in info.items():
+#             if isinstance(value, tuple):
+#                 print(f"  {key}: {value[0]:.2e} - {value[1]:.2e}")
+#             else:
+#                 print(f"  {key}: {value:.2e}")
         
-        # Test at a few frequencies
-        test_frequencies = [5e14, 6e14, 7e14]  # Around optical
-        print(f"\nFlux density at test frequencies:")
-        for nu in test_frequencies:
-            flux = source.total_flux(nu)
-            wavelength_nm = 3e8 / nu * 1e9
-            print(f"  ν = {nu:.1e} Hz ({wavelength_nm:.0f} nm): F_ν = {flux:.2e} W/m²/Hz")
+#         # Test at a few frequencies
+#         test_frequencies = [5e14, 6e14, 7e14]  # Around optical
+#         print(f"\nFlux density at test frequencies:")
+#         for nu in test_frequencies:
+#             flux = source.total_flux(nu)
+#             wavelength_nm = 3e8 / nu * 1e9
+#             print(f"  ν = {nu:.1e} Hz ({wavelength_nm:.0f} nm): F_ν = {flux:.2e} W/m²/Hz")
         
-        # Test intensity at origin
-        nu_test = 5e14
-        n_hat_origin = np.array([0.0, 0.0])
-        n_hat_offset = np.array([1e-6, 1e-6])
+#         # Test intensity at origin
+#         nu_test = 5e14
+#         n_hat_origin = np.array([0.0, 0.0])
+#         n_hat_offset = np.array([1e-6, 1e-6])
         
-        intensity_origin = source.intensity(nu_test, n_hat_origin)
-        intensity_offset = source.intensity(nu_test, n_hat_offset)
+#         intensity_origin = source.intensity(nu_test, n_hat_origin)
+#         intensity_offset = source.intensity(nu_test, n_hat_offset)
         
-        print(f"\nIntensity test at ν = {nu_test:.1e} Hz:")
-        print(f"  At origin [0,0]: I = {intensity_origin:.2e} W/m²/Hz/sr")
-        print(f"  At offset [1μas,1μas]: I = {intensity_offset:.2e} W/m²/Hz/sr")
+#         print(f"\nIntensity test at ν = {nu_test:.1e} Hz:")
+#         print(f"  At origin [0,0]: I = {intensity_origin:.2e} W/m²/Hz/sr")
+#         print(f"  At offset [1μas,1μas]: I = {intensity_offset:.2e} W/m²/Hz/sr")
         
-        # Test visibility function with FFT caching
-        baseline = np.array([100.0, 0.0, 0.0])  # 100m E-W baseline
-        vis = source.V(nu_test, baseline)
-        print(f"\nVisibility test:")
-        print(f"  Baseline: {baseline} m")
-        print(f"  V = {vis:.6f}")
-        print(f"  |V| = {abs(vis):.6f}")
-        print(f"  Phase = {np.angle(vis)*180/np.pi:.2f}°")
+#         # Test visibility function with FFT caching
+#         baseline = np.array([100.0, 0.0, 0.0])  # 100m E-W baseline
+#         vis = source.V(nu_test, baseline)
+#         print(f"\nVisibility test:")
+#         print(f"  Baseline: {baseline} m")
+#         print(f"  V = {vis:.6f}")
+#         print(f"  |V| = {abs(vis):.6f}")
+#         print(f"  Phase = {np.angle(vis)*180/np.pi:.2f}°")
         
-        # Test g2_minus_one function (inherited from ChaoticSource)
-        nu_0 = 5e14  # 600 nm
-        delta_nu = 1e12  # 1 THz bandwidth
-        delta_t = 1e-9  # 1 ns time lag
+#         # Test g2_minus_one function (inherited from ChaoticSource)
+#         nu_0 = 5e14  # 600 nm
+#         delta_nu = 1e12  # 1 THz bandwidth
+#         delta_t = 1e-9  # 1 ns time lag
         
-        g2_minus_one_value = source.g2_minus_one(delta_t, nu_0, delta_nu)
-        print(f"\nSecond-order coherence function test:")
-        print(f"  Parameters: Δt={delta_t*1e9} ns, ν₀={nu_0:.1e} Hz, Δν={delta_nu:.1e} Hz")
-        print(f"  g²(Δt) - 1 = {g2_minus_one_value:.3f}")
+#         g2_minus_one_value = source.g2_minus_one(delta_t, nu_0, delta_nu)
+#         print(f"\nSecond-order coherence function test:")
+#         print(f"  Parameters: Δt={delta_t*1e9} ns, ν₀={nu_0:.1e} Hz, Δν={delta_nu:.1e} Hz")
+#         print(f"  g²(Δt) - 1 = {g2_minus_one_value:.3f}")
         
-        print(f"\n✅ Sedona SN2011fe source test completed successfully!")
-        print(f"FFT cache contains {len(source._fft_cache)} frequency entries")
+#         print(f"\n✅ Sedona SN2011fe source test completed successfully!")
+#         print(f"FFT cache contains {len(source._fft_cache)} frequency entries")
         
-        return source
+#         return source
         
-    except Exception as e:
-        print(f"❌ Error testing Sedona source: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+#     except Exception as e:
+#         print(f"❌ Error testing Sedona source: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return None
 
 
 
@@ -577,7 +577,7 @@ def test_sedona_source():
 
 if __name__ == "__main__":
     # Test the implementation
-    abc = test_sedona_source()
+    # abc = test_sedona_source()s
     
     if abc is not None:
         print(f"\n📊 Source ready for intensity interferometry calculations!")
