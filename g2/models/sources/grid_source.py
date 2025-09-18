@@ -103,12 +103,12 @@ class GridSource(source.ChaoticSource):
         self._fft_cache = {}  # Cache FFT results by frequency
         self._fft_grids = {}  # Cache spatial frequency grids
         
-        print(f"Loaded Sedona SN2011fe model:")
-        print(f"  Wavelength range: {np.min(self.wavelength_grid):.1f} - {np.max(self.wavelength_grid):.1f} Å")
-        print(f"  Frequency range: {self.freq_min:.2e} - {self.freq_max:.2e} Hz")
-        print(f"  Peak flux density: {np.max(self.flux_density_grid):.2e} W/m²/Hz")
-        print(f"  Spatial grid: {self.nx} × {self.ny}")
-        print(f"  Wavelength points: {self.n_wavelengths}")
+        # print(f"Loaded Sedona SN2011fe model:")
+        # print(f"  Wavelength range: {np.min(self.wavelength_grid):.1f} - {np.max(self.wavelength_grid):.1f} Å")
+        # print(f"  Frequency range: {self.freq_min:.2e} - {self.freq_max:.2e} Hz")
+        # print(f"  Peak flux density: {np.max(self.flux_density_grid):.2e} W/m²/Hz")
+        # print(f"  Spatial grid: {self.nx} × {self.ny}")
+        # print(f"  Wavelength points: {self.n_wavelengths}")
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
         """

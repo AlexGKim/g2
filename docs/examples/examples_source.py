@@ -22,35 +22,56 @@ def summary(source):
     detector_jitter = 1e-11  # 10 ps
     throughput = 1.
 
+    nus = jnp.array([nu_0, nu_0*1.1])
+    baselines = jnp.array([baseline, baseline*1.1])
+    print("")
+    print("Source type:", type(source).__name__)  # Print source type
+    print("Source parameters:", source.get_params())    # Print source parameters
+
     # Calclate signal
-    print("|V|^2:", end=" ")
+    print("|V|^2:")
+    print(". nu scalar")
     print(source.V_squared(nu_0, baseline))
+    print(". nu vectorized")
+    print(jax.vmap(source.V_squared, in_axes=(0, None))(nus, baseline))
+    print(". baseline vectorized")
+    print(jax.vmap(source.V_squared, in_axes=(None, 0))(nu_0, baselines))
+    print(". nu and baseline vectorized")
+    print(jax.vmap(lambda nu: jax.vmap(lambda b: source.V_squared(nu, b))(baselines))(nus))
 
-    # Print source parameters
-    print("Source parameters:", end=" ")
-    print(source.get_params())
-
+    print("")
     # Print partial Jacobian of signal w.r.t. source parameters
+    
     print("Partial Jacobian of |V|^2 w.r.t. source parameters:", end=" ")
+    print(". nu scalar")
     print(source.V_squared_jacobian(nu_0, baseline))
+    print(". nu vectorized")
+    print(jax.vmap(source.V_squared_jacobian, in_axes=(0, None))(nus, baseline))
+    print(". baseline vectorized")
+    print(jax.vmap(source.V_squared_jacobian, in_axes=(None, 0))(nu_0, baselines))
+    print(". nu and baseline vectorized")
+    print(jax.vmap(lambda nu: jax.vmap(lambda b: source.V_squared_jacobian(nu, b))(baselines))(nus))
+ 
 
+    print("")
     # Calculate noise
     print("Inverse noise (SNR) for 1 hour integration:", end=" ")
+    print(". nu scalar")
     print(inverse_noise(source, nu_0, baseline, integration_time, telescope_area=telescope_area,
                                 throughput=throughput, detector_jitter=detector_jitter))
-    
-    nus = jnp.array([nu_0, nu_0*1.1])
-    print("|V|^2:", end=" ")
-    print(jax.vmap(source.V_squared, in_axes=(0, None))(nus, baseline))
-
-    print("Partial Jacobian of |V|^2 w.r.t. source parameters:", end=" ")
-    print(jax.vmap(source.V_squared_jacobian, in_axes=(0, None))(nus, baseline))
-
-    print("Inverse noise (SNR) for 1 hour integration:", end=" ")
+    print(". nu vectorized")
     print(jax.vmap(inverse_noise, in_axes=(None, 0, None, None, None, None, None))(source, nus, baseline, integration_time,
                                 telescope_area,
                                 throughput, detector_jitter))
-
+    print(". baseline vectorized")
+    print(jax.vmap(inverse_noise, in_axes=(None, None, 0, None, None, None, None))(source, nus, baseline, integration_time,
+                                telescope_area,
+                                throughput, detector_jitter))
+    print(". nu and baseline vectorized")
+    print(jax.vmap(lambda nu: jax.vmap(
+        lambda b: inverse_noise(source, nu, b, integration_time, 
+                               telescope_area, throughput, detector_jitter))(baseline))(nus))
+    
     return
 # summary-end
 
