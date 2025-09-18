@@ -14,12 +14,12 @@ Core functions for HBT and intensity interferometry calculations.
 g2.models
 ---------
 
-g2.models.base
-~~~~~~~~~~~~~~
+g2.models.abc.abc
+~~~~~~~~~~~~~~~~~
 
 Abstract base classes for source models.
 
-.. automodule:: g2.models.base.source
+.. automodule:: g2.models.abc
    :members:
    :undoc-members:
    :show-inheritance:

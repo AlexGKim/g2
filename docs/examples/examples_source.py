@@ -82,7 +82,7 @@ flux_densities = [1e-26, 5e-27]  # W/m²/Hz - Primary and Secondary
 positions = [[1e-8, 0], [-1e-8, 0]]  # radians - positions
 source = MultiPoint(flux_densities, positions)
 source.radius = 2e-8  # Set radius to 20 microarcseconds
-#multipoint-end
+# multipoint-end
 
 summary(source)
 
