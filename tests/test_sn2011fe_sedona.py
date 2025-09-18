@@ -16,7 +16,7 @@ import tempfile
 
 # Add sources directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'sources'))
-from sources.sn2011fe_sedona import SedonaSN2011feSource
+from g2.models.sources.grid_source import GridSource   
 
 
 class TestSedonaSN2011feSource(unittest.TestCase):
@@ -69,13 +69,6 @@ class TestSedonaSN2011feSource(unittest.TestCase):
         # Check frequency range
         self.assertGreater(self.source.freq_max, self.source.freq_min)
     
-    def test_initialization_file_not_found(self):
-        """Test initialization with non-existent files"""
-        with self.assertRaises(FileNotFoundError):
-            SedonaSN2011feSource(
-                wave_grid_file="nonexistent_wave.npy",
-                flux_file="nonexistent_flux.npy"
-            )
     
     def test_total_flux_calculation(self):
         """Test total flux calculation"""

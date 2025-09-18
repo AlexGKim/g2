@@ -10,10 +10,10 @@ import os
 import sncosmo
 from pathlib import Path
 
-from ..base import source
+from ..base import abc
 from scipy.interpolate import interp1d
 
-class GridSource(source.ChaoticSource):
+class GridSource(abc.ChaoticSource):
     """
     Sedona model source for SN2011fe using numpy data files with FFT-based visibility calculation
     
@@ -577,9 +577,9 @@ def test_sedona_source():
 
 if __name__ == "__main__":
     # Test the implementation
-    source = test_sedona_source()
+    abc = test_sedona_source()
     
-    if source is not None:
+    if abc is not None:
         print(f"\n📊 Source ready for intensity interferometry calculations!")
         print(f"Use this source with IntensityInterferometry class for visibility calculations.")
         
@@ -594,7 +594,7 @@ if __name__ == "__main__":
         
         nu_test = 5e14
         for i, baseline in enumerate(baselines):
-            vis = source.V(nu_test, baseline)
+            vis = abc.V(nu_test, baseline)
             print(f"  Baseline {i+1}: {baseline[:2]} m -> |V| = {abs(vis):.6f}")
         
-        print(f"FFT cache now contains {len(source._fft_cache)} frequency entries")
+        print(f"FFT cache now contains {len(abc._fft_cache)} frequency entries")

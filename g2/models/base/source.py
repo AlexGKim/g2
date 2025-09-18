@@ -68,6 +68,8 @@ from dataclasses import dataclass
 try:
     import jax
     import jax.numpy as jnp
+    from jax.typing import ArrayLike
+
 except ImportError:
     # Mock jax for documentation generation
     class MockJax:
@@ -75,6 +77,7 @@ except ImportError:
             return lambda *args, **kwargs: None
     jax = MockJax()
     jnp = MockJax()
+
 from typing import Dict, Any
 
 
@@ -145,7 +148,7 @@ class AbstractSource(ABC):
         """
         pass
 
-    def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None) -> complex:
+    def V(self, nu_0: float, baseline: "ArrayLike", params: dict = None) -> complex:
         """
         Calculate the fringe visibility that corresponds to the intensity distribution.
 

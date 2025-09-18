@@ -127,195 +127,195 @@ def inverse_noise(source: ChaoticSource,
     return inverse_noise
 
 
-def optimize_integration_time(source: ChaoticSource,
-                            nu_0: float,
-                            baseline: np.ndarray,
-                            delta_nu: float,
-                            target_snr: float,
-                            detector_area: float = 1.0,
-                            quantum_efficiency: float = 1.0) -> float:
-    """
-    Calculate required integration time to achieve target SNR.
+# def optimize_integration_time(source: ChaoticSource,
+#                             nu_0: float,
+#                             baseline: np.ndarray,
+#                             delta_nu: float,
+#                             target_snr: float,
+#                             detector_area: float = 1.0,
+#                             quantum_efficiency: float = 1.0) -> float:
+#     """
+#     Calculate required integration time to achieve target SNR.
     
-    Parameters
-    ----------
-    source : ChaoticSource
-        The chaotic light source object.
-    nu_0 : float
-        Central frequency in Hz.
-    baseline : array_like, shape (3,)
-        Baseline vector in meters.
-    delta_nu : float
-        Frequency bandwidth in Hz.
-    target_snr : float
-        Desired signal-to-noise ratio.
-    detector_area : float, optional
-        Effective detector area in m². Default is 1.0.
-    quantum_efficiency : float, optional
-        Detector quantum efficiency (0-1). Default is 1.0.
+#     Parameters
+#     ----------
+#     source : ChaoticSource
+#         The chaotic light source object.
+#     nu_0 : float
+#         Central frequency in Hz.
+#     baseline : array_like, shape (3,)
+#         Baseline vector in meters.
+#     delta_nu : float
+#         Frequency bandwidth in Hz.
+#     target_snr : float
+#         Desired signal-to-noise ratio.
+#     detector_area : float, optional
+#         Effective detector area in m². Default is 1.0.
+#     quantum_efficiency : float, optional
+#         Detector quantum efficiency (0-1). Default is 1.0.
         
-    Returns
-    -------
-    integration_time : float
-        Required integration time in seconds to achieve target SNR.
+#     Returns
+#     -------
+#     integration_time : float
+#         Required integration time in seconds to achieve target SNR.
         
-    Notes
-    -----
-    This function uses an iterative approach to find the integration time
-    that yields the desired SNR, accounting for the scaling of noise with
-    integration time for chaotic sources.
-    """
-    # Initial guess: scale with target_snr^2 (for photon-limited case)
-    flux = source.total_flux(nu_0)
-    visibility = source.visibility(nu_0, baseline)
-    visibility_magnitude = abs(visibility)
+#     Notes
+#     -----
+#     This function uses an iterative approach to find the integration time
+#     that yields the desired SNR, accounting for the scaling of noise with
+#     integration time for chaotic sources.
+#     """
+#     # Initial guess: scale with target_snr^2 (for photon-limited case)
+#     flux = source.total_flux(nu_0)
+#     visibility = source.visibility(nu_0, baseline)
+#     visibility_magnitude = abs(visibility)
     
-    # Physical constants
-    h = 6.62607015e-34  # Planck constant
-    photon_energy = h * nu_0
+#     # Physical constants
+#     h = 6.62607015e-34  # Planck constant
+#     photon_energy = h * nu_0
     
-    # Rough estimate assuming photon-limited performance
-    power = flux * detector_area * delta_nu
-    photon_rate = power / photon_energy * quantum_efficiency
+#     # Rough estimate assuming photon-limited performance
+#     power = flux * detector_area * delta_nu
+#     photon_rate = power / photon_energy * quantum_efficiency
     
-    # For chaotic light, need extra factor for enhanced noise
-    signal = visibility_magnitude**2
-    if signal > 0:
-        # Rough scaling: SNR² ∝ N_photons for chaotic light
-        estimated_photons_needed = (target_snr**2) / signal * 4  # Factor 4 for g²(0)=2
-        integration_time_estimate = estimated_photons_needed / photon_rate
-    else:
-        return np.inf
+#     # For chaotic light, need extra factor for enhanced noise
+#     signal = visibility_magnitude**2
+#     if signal > 0:
+#         # Rough scaling: SNR² ∝ N_photons for chaotic light
+#         estimated_photons_needed = (target_snr**2) / signal * 4  # Factor 4 for g²(0)=2
+#         integration_time_estimate = estimated_photons_needed / photon_rate
+#     else:
+#         return np.inf
     
-    # Refine with actual calculation
-    integration_time = integration_time_estimate
-    for _ in range(10):  # Iterative refinement
-        snr = calculate_snr_visibility(source, nu_0, baseline, delta_nu,
-                                     integration_time, detector_area,
-                                     quantum_efficiency)
-        if abs(snr - target_snr) / target_snr < 0.01:  # 1% accuracy
-            break
+#     # Refine with actual calculation
+#     integration_time = integration_time_estimate
+#     for _ in range(10):  # Iterative refinement
+#         snr = calculate_snr_visibility(source, nu_0, baseline, delta_nu,
+#                                      integration_time, detector_area,
+#                                      quantum_efficiency)
+#         if abs(snr - target_snr) / target_snr < 0.01:  # 1% accuracy
+#             break
         
-        # Adjust integration time
-        scaling_factor = (target_snr / snr)**2
-        integration_time *= scaling_factor
+#         # Adjust integration time
+#         scaling_factor = (target_snr / snr)**2
+#         integration_time *= scaling_factor
     
-    return integration_time
+#     return integration_time
 
 
-def calculate_fisher_matrix(source: ChaoticSource,
-                          nu_0: float,
-                          baselines: np.ndarray,
-                          delta_nu: float,
-                          integration_time: float,
-                          detector_area: float = 1.0,
-                          quantum_efficiency: float = 1.0) -> np.ndarray:
-    """
-    Calculate Fisher information matrix for multiple baseline measurements.
+# def calculate_fisher_matrix(source: ChaoticSource,
+#                           nu_0: float,
+#                           baselines: np.ndarray,
+#                           delta_nu: float,
+#                           integration_time: float,
+#                           detector_area: float = 1.0,
+#                           quantum_efficiency: float = 1.0) -> np.ndarray:
+#     """
+#     Calculate Fisher information matrix for multiple baseline measurements.
     
-    This function computes the full Fisher information matrix for estimating
-    source parameters from multiple baseline measurements, providing the
-    theoretical limits on parameter estimation accuracy.
+#     This function computes the full Fisher information matrix for estimating
+#     source parameters from multiple baseline measurements, providing the
+#     theoretical limits on parameter estimation accuracy.
     
-    Parameters
-    ----------
-    source : ChaoticSource
-        The chaotic light source object.
-    nu_0 : float
-        Central frequency in Hz.
-    baselines : array_like, shape (N, 3)
-        Array of baseline vectors in meters.
-    delta_nu : float
-        Frequency bandwidth in Hz.
-    integration_time : float
-        Integration time in seconds.
-    detector_area : float, optional
-        Effective detector area in m². Default is 1.0.
-    quantum_efficiency : float, optional
-        Detector quantum efficiency (0-1). Default is 1.0.
+#     Parameters
+#     ----------
+#     source : ChaoticSource
+#         The chaotic light source object.
+#     nu_0 : float
+#         Central frequency in Hz.
+#     baselines : array_like, shape (N, 3)
+#         Array of baseline vectors in meters.
+#     delta_nu : float
+#         Frequency bandwidth in Hz.
+#     integration_time : float
+#         Integration time in seconds.
+#     detector_area : float, optional
+#         Effective detector area in m². Default is 1.0.
+#     quantum_efficiency : float, optional
+#         Detector quantum efficiency (0-1). Default is 1.0.
         
-    Returns
-    -------
-    fisher_matrix : ndarray, shape (N, N)
-        Fisher information matrix for the measurements.
-        The inverse of this matrix provides the covariance matrix
-        for parameter estimation via the Cramér-Rao bound.
+#     Returns
+#     -------
+#     fisher_matrix : ndarray, shape (N, N)
+#         Fisher information matrix for the measurements.
+#         The inverse of this matrix provides the covariance matrix
+#         for parameter estimation via the Cramér-Rao bound.
         
-    Notes
-    -----
-    The Fisher matrix elements are calculated as:
+#     Notes
+#     -----
+#     The Fisher matrix elements are calculated as:
     
-    .. math::
-        F_{ij} = Σ_k (∂V_k/∂θ_i)(∂V_k/∂θ_j) / σ²_k
+#     .. math::
+#         F_{ij} = Σ_k (∂V_k/∂θ_i)(∂V_k/∂θ_j) / σ²_k
     
-    where V_k is the visibility for baseline k, θ_i are the parameters,
-    and σ²_k is the measurement variance for baseline k.
-    """
-    n_baselines = baselines.shape[0]
-    fisher_matrix = np.zeros((n_baselines, n_baselines))
+#     where V_k is the visibility for baseline k, θ_i are the parameters,
+#     and σ²_k is the measurement variance for baseline k.
+#     """
+#     n_baselines = baselines.shape[0]
+#     fisher_matrix = np.zeros((n_baselines, n_baselines))
     
-    # Calculate inverse noise for each baseline
-    for i in range(n_baselines):
-        inv_noise_i = inverse_noise(source, nu_0, baselines[i],
-                                            delta_nu, integration_time,
-                                            detector_area, quantum_efficiency)
-        fisher_matrix[i, i] = inv_noise_i
+#     # Calculate inverse noise for each baseline
+#     for i in range(n_baselines):
+#         inv_noise_i = inverse_noise(source, nu_0, baselines[i],
+#                                             delta_nu, integration_time,
+#                                             detector_area, quantum_efficiency)
+#         fisher_matrix[i, i] = inv_noise_i
     
-    # Off-diagonal terms would require parameter derivatives
-    # For now, assume independent measurements (diagonal matrix)
+#     # Off-diagonal terms would require parameter derivatives
+#     # For now, assume independent measurements (diagonal matrix)
     
-    return fisher_matrix
+#     return fisher_matrix
 
 
-if __name__ == "__main__":
-    """
-    Example usage and validation of inverse noise calculations.
-    """
-    from .sources.source import UniformDisk, PointSource
+# if __name__ == "__main__":
+#     """
+#     Example usage and validation of inverse noise calculations.
+#     """
+#     from .sources.source import UniformDisk, PointSource
     
-    # Create test sources
-    disk = UniformDisk(flux_density=1e-26, radius=1e-8)  # ~2 mas disk
-    point = PointSource(lambda nu: 1e-26)  # 1 Jy point source
+#     # Create test sources
+#     disk = UniformDisk(flux_density=1e-26, radius=1e-8)  # ~2 mas disk
+#     point = PointSource(lambda nu: 1e-26)  # 1 Jy point source
     
-    # Measurement parameters
-    nu_0 = 5e14  # 600 nm
-    delta_nu = 1e12  # 1 THz bandwidth
-    integration_time = 3600  # 1 hour
-    detector_area = 10.0  # 10 m² effective area
+#     # Measurement parameters
+#     nu_0 = 5e14  # 600 nm
+#     delta_nu = 1e12  # 1 THz bandwidth
+#     integration_time = 3600  # 1 hour
+#     detector_area = 10.0  # 10 m² effective area
     
-    # Test different baselines
-    baselines = [
-        np.array([10.0, 0.0, 0.0]),    # 10 m
-        np.array([100.0, 0.0, 0.0]),   # 100 m
-        np.array([1000.0, 0.0, 0.0]),  # 1 km
-    ]
+#     # Test different baselines
+#     baselines = [
+#         np.array([10.0, 0.0, 0.0]),    # 10 m
+#         np.array([100.0, 0.0, 0.0]),   # 100 m
+#         np.array([1000.0, 0.0, 0.0]),  # 1 km
+#     ]
     
-    print("Inverse Noise Calculations for Chaotic Sources")
-    print("=" * 50)
+#     print("Inverse Noise Calculations for Chaotic Sources")
+#     print("=" * 50)
     
-    for source, name in [(disk, "Uniform Disk"), (point, "Point Source")]:
-        print(f"\n{name}:")
-        print(f"Flux density: {source.total_flux(nu_0):.2e} W/m²/Hz")
+#     for source, name in [(disk, "Uniform Disk"), (point, "Point Source")]:
+#         print(f"\n{name}:")
+#         print(f"Flux density: {source.total_flux(nu_0):.2e} W/m²/Hz")
         
-        for baseline in baselines:
-            baseline_length = np.linalg.norm(baseline[:2])
-            visibility = source.visibility(nu_0, baseline)
-            inv_noise = inverse_noise(source, nu_0, baseline, delta_nu,
-                                              integration_time, detector_area)
-            snr = calculate_snr_visibility(source, nu_0, baseline, delta_nu,
-                                         integration_time, detector_area)
+#         for baseline in baselines:
+#             baseline_length = np.linalg.norm(baseline[:2])
+#             visibility = source.visibility(nu_0, baseline)
+#             inv_noise = inverse_noise(source, nu_0, baseline, delta_nu,
+#                                               integration_time, detector_area)
+#             snr = calculate_snr_visibility(source, nu_0, baseline, delta_nu,
+#                                          integration_time, detector_area)
             
-            print(f"  Baseline {baseline_length:4.0f} m: "
-                  f"|V| = {abs(visibility):.3f}, "
-                  f"Inv. Noise = {inv_noise:.2e}, "
-                  f"SNR = {snr:.1f}")
+#             print(f"  Baseline {baseline_length:4.0f} m: "
+#                   f"|V| = {abs(visibility):.3f}, "
+#                   f"Inv. Noise = {inv_noise:.2e}, "
+#                   f"SNR = {snr:.1f}")
     
-    # Test integration time optimization
-    print(f"\nIntegration time for SNR = 10:")
-    target_snr = 10.0
-    baseline = np.array([100.0, 0.0, 0.0])
+#     # Test integration time optimization
+#     print(f"\nIntegration time for SNR = 10:")
+#     target_snr = 10.0
+#     baseline = np.array([100.0, 0.0, 0.0])
     
-    for source, name in [(disk, "Uniform Disk"), (point, "Point Source")]:
-        req_time = optimize_integration_time(source, nu_0, baseline, delta_nu,
-                                           target_snr, detector_area)
-        print(f"  {name}: {req_time:.1f} seconds ({req_time/3600:.2f} hours)")
+#     for source, name in [(disk, "Uniform Disk"), (point, "Point Source")]:
+#         req_time = optimize_integration_time(source, nu_0, baseline, delta_nu,
+#                                            target_snr, detector_area)
+#         print(f"  {name}: {req_time:.1f} seconds ({req_time/3600:.2f} hours)")
