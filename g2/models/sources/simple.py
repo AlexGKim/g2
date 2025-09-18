@@ -254,7 +254,7 @@ class UniformDisk(ChaoticSource):
     >>> for B in [10, 100, 1000]:  # meters
     >>>     baseline = np.array([B, 0.0, 0.0])
     >>>     vis = disk.visibility(5e14, baseline)
-    >>>     print(f"B={B}m: \\|V\\|={abs(vis):.3f}")
+    >>>     print(f"B={B}m: \\V\\|={abs(vis):.3f}")
     """
     
     def __init__(self, flux_density: float, radius: float):
@@ -546,10 +546,10 @@ class MultiPoint(ChaoticSource):
     
     def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
         """
-        Calculate the Jacobian of |V|² with respect to the source parameters.
+        Calculate the Jacobian of \\V\\² with respect to the source parameters.
         
         For multiple point sources, provides correct derivatives:
-        - flux_densities: 0 (|V|² is invariant to uniform flux scaling)
+        - flux_densities: 0 (\\V\\² is invariant to uniform flux scaling)
         - positions: computed analytically
         - spectral_indices: 0 (for flat spectra at reference frequency)
         - reference_frequency: 0 (for evaluation at reference frequency)
@@ -567,7 +567,7 @@ class MultiPoint(ChaoticSource):
         -------
         jacobian : dict
             Dictionary with same keys as params, containing the partial
-            derivatives of |V|² with respect to each parameter.
+            derivatives of \\V\\² with respect to each parameter.
         """
         if params is None:
             params = self.get_params()
@@ -603,7 +603,7 @@ class MultiPoint(ChaoticSource):
             # Derivative of V w.r.t. position of source i
             dV_dpos_i = weight_i * 1j * jnp.exp(1j * phase_i) * dphase_dpos
             
-            # Derivative of |V|² = 2 * Re(V* * dV/dpos)
+            # Derivative of \\V\\² = 2 * Re(V* * dV/dpos)
             d_abs_V_squared_dpos_i = 2 * jnp.real(jnp.conj(V_current) * dV_dpos_i)
             
             pos_grad = pos_grad.at[i].set(d_abs_V_squared_dpos_i)
