@@ -75,6 +75,17 @@ def summary(source):
     return
 # summary-end
 
+# multipoint-begin
+from g2.models.sources.simple import  MultiPoint
+# Create a simple binary system
+flux_densities = [1e-26, 5e-27]  # W/m²/Hz - Primary and Secondary
+positions = [[1e-8, 0], [-1e-8, 0]]  # radians - positions
+source = MultiPoint(flux_densities, positions)
+source.radius = 2e-8  # Set radius to 20 microarcseconds
+#multipoint-end
+
+summary(source)
+
 # uniform_disk-begin
 from g2.models.sources.simple import  UniformDisk
 
@@ -94,4 +105,4 @@ source = GridSource.getSN2011feSource()  # 0.5 milliarcseconds
 source.radius = source.pixel_scale *5  # Set radius to half the grid size
 # sn2011fe-end
 
-summary(source)
+# summary(source)

@@ -3,6 +3,8 @@ from typing import Callable, Union, Any, Dict
 import jax.numpy as jnp # Use JAX for array operations
 from jax import custom_jvp, pure_callback
 import jax
+import jax.lax
+from functools import partial
 
 from scipy.special import j1, jv
 
@@ -383,4 +385,309 @@ class UniformDisk(ChaoticSource):
         #     V_value = 2 * _j1(zeta) / zeta   
         # Return as complex number (phase is zero for symmetric disk)
         return V_value + 0.0j
+
+
+class MultiPoint(ChaoticSource):
+    """
+    Multiple point sources implementation.
+    
+    Represents multiple unresolved point sources at specified positions on the sky.
+    This extends the single PointSource to handle collections of point sources,
+    which is useful for modeling binary stars, multiple AGN components, or
+    other multi-component sources.
+    
+    The total intensity is the sum of individual point source intensities:
+        I(ν, n̂) = Σᵢ Fᵢ(ν) δ²(n̂ - n̂ᵢ)
+    
+    where Fᵢ(ν) is the flux density of the i-th source and n̂ᵢ is its position.
+    
+    Parameters
+    ----------
+    flux_densities : array_like
+        Array of flux densities for each source in W m⁻² Hz⁻¹.
+    positions : array_like, shape (N, 2)
+        Array of source positions in radians [[theta_x1, theta_y1], ...].
+    spectral_indices : array_like, optional
+        Array of spectral indices for each source (F_ν ∝ ν^α). Default is 0 (flat spectrum).
+    reference_frequency : float, optional
+        Reference frequency in Hz for spectral index scaling. Default is 5e14 Hz.
+        
+    Attributes
+    ----------
+    flux_densities : jnp.ndarray
+        Flux densities of individual sources.
+    positions : jnp.ndarray
+        Positions of individual sources.
+    spectral_indices : jnp.ndarray
+        Spectral indices of individual sources.
+    reference_frequency : float
+        Reference frequency for spectral scaling.
+        
+    Examples
+    --------
+    >>> # Binary star system with flat spectra
+    >>> flux_densities = [1e-26, 5e-27]  # W/m²/Hz
+    >>> positions = [[1e-8, 0], [-1e-8, 0]]  # radians
+    >>> binary = MultiPoint(flux_densities, positions)
+    >>> print(f"Total flux at 5e14 Hz: {binary.total_flux(5e14):.2e} W/m²/Hz")
+    >>>
+    >>> # Triple system with different spectral indices
+    >>> flux_densities = [1e-26, 8e-27, 3e-27]
+    >>> positions = [[0, 0], [2e-8, 1e-8], [-1e-8, -2e-8]]
+    >>> spectral_indices = [-0.5, -1.0, 0.0]  # Different spectral slopes
+    >>> triple = MultiPoint(flux_densities, positions, spectral_indices)
+    >>>
+    >>> # Visibility is coherent sum of individual source visibilities
+    >>> baseline = np.array([100.0, 0.0, 0.0])
+    >>> vis = triple.V(5e14, baseline)
+    >>> print(f"Visibility: {abs(vis):.3f}")
+    """
+    
+    def __init__(self, flux_densities: Union[list, np.ndarray],
+                 positions: Union[list, np.ndarray],
+                 spectral_indices: Union[list, np.ndarray, None] = None,
+                 reference_frequency: float = 5e14):
+        """
+        Initialize multiple point sources.
+        
+        Parameters
+        ----------
+        flux_densities : array_like
+            Array of flux densities for each source in W m⁻² Hz⁻¹.
+        positions : array_like, shape (N, 2)
+            Array of source positions in radians [[theta_x1, theta_y1], ...].
+        spectral_indices : array_like, optional
+            Array of spectral indices for each source (F_ν ∝ ν^α). Default is 0.
+        reference_frequency : float, optional
+            Reference frequency in Hz for spectral index scaling. Default is 5e14 Hz.
+        """
+        self.flux_densities = jnp.array(flux_densities)
+        self.positions = jnp.array(positions)
+        self.reference_frequency = reference_frequency
+        
+        # Set default spectral indices to 0 (flat spectrum) if not provided
+        if spectral_indices is None:
+            self.spectral_indices = jnp.zeros(len(flux_densities))
+        else:
+            self.spectral_indices = jnp.array(spectral_indices)
+        
+        # Validate input dimensions
+        if len(self.flux_densities) != len(self.positions):
+            raise ValueError("Number of flux densities must match number of positions")
+        if len(self.spectral_indices) != len(self.flux_densities):
+            raise ValueError("Number of spectral indices must match number of sources")
+
+    def get_params(self) -> Dict[str, Any]:
+        """Extract parameters as a dictionary"""
+        return {
+            'flux_densities': self.flux_densities,
+            'positions': self.positions,
+            'spectral_indices': self.spectral_indices,
+            'reference_frequency': self.reference_frequency
+        }
+    
+    def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, atol: float = 1e-10) -> Union[float, np.ndarray]:
+        """
+        Calculate multiple point sources intensity.
+        
+        The total intensity is the sum of individual point source intensities.
+        Each point source contributes a delta function at its position.
+        
+        Parameters
+        ----------
+        nu : float or array_like
+            Frequency in Hz.
+        n_hat : array_like, shape (2,)
+            Sky direction in radians.
+        atol : float, optional
+            Tolerance for delta function approximation. Default is 1e-10.
+            
+        Returns
+        -------
+        intensity : float
+            Total specific intensity in W m⁻² Hz⁻¹ sr⁻¹.
+        """
+        total_intensity = 0.0
+        
+        # Calculate flux for each source at the given frequency
+        if np.isscalar(nu):
+            source_fluxes = self.flux_densities * (nu / self.reference_frequency) ** self.spectral_indices
+        else:
+            nu_array = jnp.array(nu)
+            source_fluxes = self.flux_densities[:, None] * (nu_array[None, :] / self.reference_frequency) ** self.spectral_indices[:, None]
+        
+        # Check if n_hat is close to any source position
+        for i in range(len(self.positions)):
+            if jnp.allclose(n_hat, self.positions[i], atol=atol):
+                if np.isscalar(nu):
+                    total_intensity += source_fluxes[i] / (np.pi * atol**2)
+                else:
+                    total_intensity += source_fluxes[i, :] / (np.pi * atol**2)
+        
+        return total_intensity
+    
+    def total_flux(self, nu: float) -> float:
+        """
+        Calculate total flux from all point sources.
+        
+        Parameters
+        ----------
+        nu : float
+            Frequency in Hz.
+            
+        Returns
+        -------
+        flux : float
+            Total flux density in W m⁻² Hz⁻¹.
+        """
+        # Calculate flux for each source and sum
+        source_fluxes = self.flux_densities * (nu / self.reference_frequency) ** self.spectral_indices
+        return jnp.sum(source_fluxes)
+    
+    def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
+        """
+        Calculate the Jacobian of |V|² with respect to the source parameters.
+        
+        For multiple point sources, provides correct derivatives:
+        - flux_densities: 0 (|V|² is invariant to uniform flux scaling)
+        - positions: computed analytically
+        - spectral_indices: 0 (for flat spectra at reference frequency)
+        - reference_frequency: 0 (for evaluation at reference frequency)
+        
+        Parameters
+        ----------
+        nu_0 : float
+            Central frequency in Hz.
+        baseline : array_like, shape (3,)
+            Baseline vector in meters [Bx, By, Bz].
+        params : dict, optional
+            Source parameters. If None, uses current source parameters.
+            
+        Returns
+        -------
+        jacobian : dict
+            Dictionary with same keys as params, containing the partial
+            derivatives of |V|² with respect to each parameter.
+        """
+        if params is None:
+            params = self.get_params()
+        
+        # Physical constants
+        c = 2.99792458e8  # Speed of light in m/s
+        wavelength = c / nu_0
+        baseline_perp = baseline[:2]
+        
+        # Calculate current visibility for position derivatives
+        V_current = self.V(nu_0, baseline, params)
+        
+        # Flux densities: derivative is 0 (invariant to uniform scaling)
+        flux_grad = jnp.zeros_like(params['flux_densities'])
+        
+        # Positions: compute analytical derivative
+        source_fluxes = params['flux_densities'] * (nu_0 / params['reference_frequency']) ** params['spectral_indices']
+        total_flux = jnp.sum(source_fluxes)
+        
+        # Calculate derivative w.r.t. each position component
+        pos_grad = jnp.zeros_like(params['positions'])
+        
+        for i in range(len(params['positions'])):
+            # Derivative of phase w.r.t. position: ∂φᵢ/∂nᵢ = 2π B_⊥ / λ
+            dphase_dpos = 2 * jnp.pi * baseline_perp / wavelength
+            
+            # Weight of this source
+            weight_i = source_fluxes[i] / total_flux
+            
+            # Phase of this source
+            phase_i = 2 * jnp.pi * jnp.dot(params['positions'][i], baseline_perp) / wavelength
+            
+            # Derivative of V w.r.t. position of source i
+            dV_dpos_i = weight_i * 1j * jnp.exp(1j * phase_i) * dphase_dpos
+            
+            # Derivative of |V|² = 2 * Re(V* * dV/dpos)
+            d_abs_V_squared_dpos_i = 2 * jnp.real(jnp.conj(V_current) * dV_dpos_i)
+            
+            pos_grad = pos_grad.at[i].set(d_abs_V_squared_dpos_i)
+        
+        # Spectral indices: 0 at reference frequency
+        spectral_grad = jnp.zeros_like(params['spectral_indices'])
+        
+        # Reference frequency: 0 when evaluated at reference frequency
+        ref_freq_grad = 0.0
+        
+        return {
+            'flux_densities': flux_grad,
+            'positions': pos_grad,
+            'spectral_indices': spectral_grad,
+            'reference_frequency': ref_freq_grad
+        }
+
+    def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None) -> complex:
+        """
+        Analytical visibility function V for multiple point sources.
+        
+        For multiple point sources, the visibility is the coherent sum of
+        individual source visibilities weighted by their flux densities.
+        
+        Uses log-sum-exp trick for numerical stability:
+        Σᵢ Fᵢ * exp(iφᵢ) = max(Fᵢ) * Σᵢ exp(ln(Fᵢ/max(Fᵢ)) + iφᵢ)
+        
+        Parameters
+        ----------
+        nu_0 : float
+            Central frequency in Hz. Determines the wavelength λ = c/ν₀.
+        baseline : array_like, shape (3,)
+            Baseline vector in meters [Bx, By, Bz]. Only perpendicular
+            components (Bx, By) are used.
+        params : dict, optional
+            Source parameters. If None, uses current source parameters.
+            
+        Returns
+        -------
+        V : complex
+            Complex visibility function as coherent sum of individual sources.
+        """
+        if params is None:
+            params = self.get_params()
+
+        # Physical constants
+        c = 2.99792458e8  # Speed of light in m/s
+        wavelength = c / nu_0
+        
+        # Extract perpendicular baseline components (ignore Bz)
+        baseline_perp = baseline[:2]
+        
+        # Calculate flux for each source at the given frequency
+        source_fluxes = params['flux_densities'] * (nu_0 / params['reference_frequency']) ** params['spectral_indices']
+        
+        # Calculate phases for each source position
+        phases = 2 * jnp.pi * jnp.dot(params['positions'], baseline_perp) / wavelength
+        
+        # Find maximum flux for numerical stability
+        max_flux = jnp.max(source_fluxes)
+        
+        # Use log-sum-exp trick for numerically stable computation
+        # Σᵢ Fᵢ * exp(iφᵢ) = max(Fᵢ) * Σᵢ exp(ln(Fᵢ/max(Fᵢ)) + iφᵢ)
+        def compute_visibility():
+            # Calculate log ratios: ln(Fᵢ/max(Fᵢ))
+            log_ratios = jnp.log(source_fluxes / max_flux)
+            
+            # Calculate stable exponentials: exp(ln(Fᵢ/max(Fᵢ)) + iφᵢ)
+            stable_exponentials = jnp.exp(log_ratios + 1j * phases)
+            
+            # Sum the stable exponentials
+            stable_sum = jnp.sum(stable_exponentials)
+            
+            # Calculate total flux for normalization
+            total_flux = jnp.sum(source_fluxes)
+            
+            # Return normalized visibility: (max_flux * stable_sum) / total_flux
+            return (max_flux * stable_sum) / total_flux
+        
+        def zero_visibility():
+            return 0.0 + 0.0j
+        
+        # Use JAX conditional to handle zero flux case
+        visibility = jax.lax.cond(max_flux == 0, zero_visibility, compute_visibility)
+        
+        return visibility
     
