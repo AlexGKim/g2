@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from g2.models import GridSource
+    from g2.models.sources.grid_source import GridSource
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import dependencies: {e}")
