@@ -1,4 +1,6 @@
 import numpy as np
+from jax import numpy as jnp
+import jax
 from g2 import inverse_noise
 
 # summary-begin
@@ -37,6 +39,18 @@ def summary(source):
     print(inverse_noise(source, nu_0, baseline, integration_time, telescope_area=telescope_area,
                                 throughput=throughput, detector_jitter=detector_jitter))
     
+    nus = jnp.array([nu_0, nu_0*1.1])
+    print("|V|^2:", end=" ")
+    print(jax.vmap(source.V_squared, in_axes=(0, None))(nus, baseline))
+
+    print("Partial Jacobian of |V|^2 w.r.t. source parameters:", end=" ")
+    print(jax.vmap(source.V_squared_jacobian, in_axes=(0, None))(nus, baseline))
+
+    print("Inverse noise (SNR) for 1 hour integration:", end=" ")
+    print(jax.vmap(inverse_noise, in_axes=(None, 0, None, None, None, None, None))(source, nus, baseline, integration_time,
+                                telescope_area,
+                                throughput, detector_jitter))
+
     return
 # summary-end
 

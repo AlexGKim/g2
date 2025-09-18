@@ -1,26 +1,59 @@
 import numpy as np
 from typing import Callable, Union, Any, Dict
 import jax.numpy as jnp # Use JAX for array operations
-from jax import custom_jvp
+from jax import custom_jvp, pure_callback
+import jax
 
 from scipy.special import j1, jv
 
 from ..base.source import ChaoticSource
 
 
-@custom_jvp
+# @custom_jvp
+# def _j1(x):
+#     """First-order Bessel function J1 using scipy.special.j1"""
+#     return j1(x)
+
+# @_j1.defjvp
+# def _j1_jvp(primals, tangents):
+#     """Custom JVP rule for J1 using scipy.special.jv"""
+#     x, = primals
+#     dx, = tangents
+#     y = j1(x)
+#     dy = y/x - jv(2, x) 
+#     return y, dy * dx 
+
+from functools import partial
+
+@partial(jax.custom_jvp, nondiff_argnums=())
 def _j1(x):
     """First-order Bessel function J1 using scipy.special.j1"""
-    return j1(x)
+    result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
+    return pure_callback(
+        lambda x: j1(np.asarray(x)).astype(x.dtype),
+        result_shape,
+        x,
+        vmap_method='sequential'
+    )
 
 @_j1.defjvp
 def _j1_jvp(primals, tangents):
-    """Custom JVP rule for J1 using scipy.special.jv"""
+    """Custom JVP rule for J1"""
     x, = primals
     dx, = tangents
-    y = j1(x)
-    dy = y/x - jv(2, x) 
-    return y, dy * dx 
+    y = _j1(x)
+    
+    # Also need to wrap jv for the derivative
+    result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
+    jv2 = pure_callback(
+        lambda x: jv(2, np.asarray(x)).astype(x.dtype),
+        result_shape,
+        x,
+        vmap_method='sequential'
+    )
+    
+    dy = y/x - jv2
+    return y, dy * dx
 
 class PointSource(ChaoticSource):
     """
@@ -341,12 +374,13 @@ class UniformDisk(ChaoticSource):
         # Calculate argument for Bessel function: zeta = 2πuθ
         zeta = np.pi * u * (2 * params['radius'])
         # Handle special case x=0 (zero baseline or zero radius)
-        if zeta == 0:
-            V_value = 1.0
-        else:
-            # Airy function: V(u) = 2J₁(x)/x
-            # V_value = 2 * j1(x) / x
-            V_value = 2 * _j1(zeta) / zeta   
+        V_value = jnp.where(zeta == 0, 1.0, 2 * _j1(zeta) / zeta)
+        # if zeta == 0:
+        #     V_value = 1.0
+        # else:
+        #     # Airy function: V(u) = 2J₁(x)/x
+        #     # V_value = 2 * j1(x) / x
+        #     V_value = 2 * _j1(zeta) / zeta   
         # Return as complex number (phase is zero for symmetric disk)
         return V_value + 0.0j
     
