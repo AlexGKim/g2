@@ -99,9 +99,13 @@ class GridSource(source.ChaoticSource):
         self.freq_min = np.min(freq_unique)
         self.freq_max = np.max(freq_unique)
 
-        # Initialize FFT cache for visibility calculations
-        self._fft_cache = {}  # Cache FFT results by frequency
-        self._fft_grids = {}  # Cache spatial frequency grids
+        # Pre-compute spatial frequency coordinate grids as instance variables
+        from scipy.fft import fftshift, fftfreq
+        self.u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale))  # cycles per radian
+        self.v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale))  # cycles per radian
+
+        # Initialize functional FFT cache for intensity results only
+        self._intensity_fft_cache = {}  # Cache only FFT intensity results by frequency
         
         # print(f"Loaded Sedona SN2011fe model:")
         # print(f"  Wavelength range: {np.min(self.wavelength_grid):.1f} - {np.max(self.wavelength_grid):.1f} Å")
@@ -260,13 +264,11 @@ class GridSource(source.ChaoticSource):
         freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
         
         # Check if FFT is already cached for this frequency
-        if freq_idx not in self._fft_cache:
-            self._compute_and_cache_fft(freq_idx)
+        if freq_idx not in self._intensity_fft_cache:
+            self._intensity_fft_cache[freq_idx] = self._compute_intensity_fft(freq_idx)
         
         # Get cached FFT data
-        intensity_fft = self._fft_cache[freq_idx]['fft']
-        u_coords = self._fft_cache[freq_idx]['u_coords']
-        v_coords = self._fft_cache[freq_idx]['v_coords']
+        intensity_fft = self._intensity_fft_cache[freq_idx]
         
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
@@ -280,18 +282,24 @@ class GridSource(source.ChaoticSource):
         v_freq = (-baseline_perp[0] * self.sin_phi_B + baseline_perp[1] * self.cos_phi_B) / wavelength if len(baseline_perp) > 1 else 0.0
         
         # Get FFT result at the closest spatial frequency coordinates
-        return self._interpolate_fft_result(intensity_fft, u_coords, v_coords, u_freq, v_freq)
+        return self._interpolate_fft_result(intensity_fft, u_freq, v_freq)
     
-    def _compute_and_cache_fft(self, freq_idx: int):
+    def _compute_intensity_fft(self, freq_idx: int) -> np.ndarray:
         """
-        Compute and cache FFT for a specific frequency using native spatial gridding.
+        Functional computation of FFT for a specific frequency using native spatial gridding.
+        Returns only the FFT intensity result for caching.
         
         Parameters
         ----------
         freq_idx : int
             Index in the frequency grid
+            
+        Returns
+        -------
+        np.ndarray
+            2D FFT of intensity map, properly normalized
         """
-        from scipy.fft import fft2, fftshift, fftfreq
+        from scipy.fft import fft2, fftshift
         
         # Get the 2D intensity map at this frequency
         intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
@@ -316,31 +324,16 @@ class GridSource(source.ChaoticSource):
             # Proper normalization for discrete FFT to approximate continuous transform
             intensity_fft *= pixel_solid_angle / total_flux
         
-        # Create spatial frequency coordinate grids
-        # The FFT gives us spatial frequencies in cycles per radian
-        freq_resolution = 1.0 / (self.nx * self.pixel_scale)  # cycles per radian
-        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale))  # cycles per radian
-        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale))  # cycles per radian
-        
-        # Cache the results
-        self._fft_cache[freq_idx] = {
-            'fft': intensity_fft,
-            'u_coords': u_coords,
-            'v_coords': v_coords,
-            'total_flux': total_flux
-        }
+        return intensity_fft
     
-    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_coords: np.ndarray,
-                               v_coords: np.ndarray, u_target: float, v_target: float) -> complex:
+    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_target: float, v_target: float) -> complex:
         """
-        Get FFT result at the closest spatial frequency coordinates.
+        Get FFT result at the closest spatial frequency coordinates using instance u_coords and v_coords.
         
         Parameters
         ----------
         intensity_fft : np.ndarray
             2D FFT of intensity map
-        u_coords, v_coords : np.ndarray
-            Spatial frequency coordinate arrays
         u_target, v_target : float
             Target spatial frequency coordinates
             
@@ -349,9 +342,9 @@ class GridSource(source.ChaoticSource):
         complex
             FFT value at closest coordinates
         """
-        # Find the closest indices for u and v coordinates
-        u_idx = np.argmin(np.abs(u_coords - u_target))
-        v_idx = np.argmin(np.abs(v_coords - v_target))
+        # Find the closest indices for u and v coordinates using instance variables
+        u_idx = np.argmin(np.abs(self.u_coords - u_target))
+        v_idx = np.argmin(np.abs(self.v_coords - v_target))
         
         # Return the FFT value at the closest grid point
         return intensity_fft[v_idx, u_idx]
@@ -561,7 +554,7 @@ class GridSource(source.ChaoticSource):
 #         print(f"  g²(Δt) - 1 = {g2_minus_one_value:.3f}")
         
 #         print(f"\n✅ Sedona SN2011fe source test completed successfully!")
-#         print(f"FFT cache contains {len(source._fft_cache)} frequency entries")
+#         print(f"FFT cache contains {len(source._intensity_fft_cache)} frequency entries")
         
 #         return source
         
@@ -597,4 +590,4 @@ if __name__ == "__main__":
             vis = abc.V(nu_test, baseline)
             print(f"  Baseline {i+1}: {baseline[:2]} m -> |V| = {abs(vis):.6f}")
         
-        print(f"FFT cache now contains {len(abc._fft_cache)} frequency entries")
+        print(f"FFT cache now contains {len(abc._intensity_fft_cache)} frequency entries")

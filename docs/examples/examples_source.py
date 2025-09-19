@@ -105,4 +105,4 @@ source = GridSource.getSN2011feSource()  # 0.5 milliarcseconds
 source.radius = source.pixel_scale *5  # Set radius to half the grid size
 # sn2011fe-end
 
-# summary(source)
+summary(source)
