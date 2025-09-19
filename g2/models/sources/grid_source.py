@@ -12,6 +12,8 @@ from pathlib import Path
 
 from ..base import source
 from scipy.interpolate import interp1d
+from scipy.fft import fftshift, fftfreq
+
 
 class GridSource(source.ChaoticSource):
     """
@@ -281,11 +283,15 @@ class GridSource(source.ChaoticSource):
         u_freq = (baseline_perp[0] * self.cos_phi_B + baseline_perp[1] * self.sin_phi_B) / wavelength if len(baseline_perp) > 0 else 0.0
         v_freq = (-baseline_perp[0] * self.sin_phi_B + baseline_perp[1] * self.cos_phi_B) / wavelength if len(baseline_perp) > 1 else 0.0
         
-        # Get distance from params or use instance variable
-        distance = params.get('distance', self.distance) if params else self.distance
+        # Calculate pixel scale from distance
+        pixel_scale = self.length_scale / params['distance']  # radians per pixel
+        
+        # Compute spatial frequency coordinate grids dynamically
+        u_coords = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
+        v_coords = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
         
         # Get FFT result at the closest spatial frequency coordinates
-        return self._interpolate_fft_result(intensity_fft, u_freq, v_freq, distance)
+        return self._interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
     
     def _compute_intensity_fft(self, freq_idx: int) -> np.ndarray:
         """
@@ -329,7 +335,7 @@ class GridSource(source.ChaoticSource):
         
         return intensity_fft
     
-    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_target: float, v_target: float, distance: float) -> complex:
+    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_target: float, v_target: float, u_coords, v_coords) -> complex:
         """
         Get FFT result at the closest spatial frequency coordinates by computing coordinates dynamically.
         
@@ -347,14 +353,7 @@ class GridSource(source.ChaoticSource):
         complex
             FFT value at closest coordinates
         """
-        from scipy.fft import fftshift, fftfreq
-        
-        # Calculate pixel scale from distance
-        pixel_scale = self.length_scale / distance  # radians per pixel
-        
-        # Compute spatial frequency coordinate grids dynamically
-        u_coords = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
-        v_coords = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
+
         
         # Find the closest indices for u and v coordinates
         u_idx = np.argmin(np.abs(u_coords - u_target))
