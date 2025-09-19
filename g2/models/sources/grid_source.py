@@ -12,8 +12,11 @@ from pathlib import Path
 
 from ..base import source
 from scipy.interpolate import interp1d
-from scipy.fft import fftshift, fftfreq
+from jax.numpy.fft import fftshift, fftfreq
 
+from functools import partial
+from jax import jit
+from jax import numpy as jnp
 
 class GridSource(source.ChaoticSource):
     """
@@ -41,8 +44,8 @@ class GridSource(source.ChaoticSource):
         """
 
         # Store input grids directly as class parameters
-        self.wavelength_grid = wavelength_grid  # [Angstrom]
-        self.flux_data_3d = flux_grid  # [erg/s/cm²/Å] - 3D array
+        self.wavelength_grid = np.array(wavelength_grid)  # [Angstrom]
+        self.flux_data_3d = np.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
         self.B = B
         self.distance = distance
         self.phi_B = phi_B  # Position angle for baseline orientation (not used here
@@ -91,11 +94,6 @@ class GridSource(source.ChaoticSource):
         unique_mask = np.diff(freq_sorted, prepend=freq_sorted[0]-1) > 0
         freq_unique = freq_sorted[unique_mask]
         flux_unique = flux_sorted[unique_mask]
-        
-        self.flux_interpolator = interp1d(
-            freq_unique, flux_unique,
-            kind='linear', bounds_error=False, fill_value=0.0
-        )
         
         # Store frequency range for reference
         self.freq_min = np.min(freq_unique)
@@ -263,14 +261,17 @@ class GridSource(source.ChaoticSource):
             params = self.get_params()
         
         # Find the closest frequency index
-        freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
+        freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
-        # Check if FFT is already cached for this frequency
-        if freq_idx not in self._intensity_fft_cache:
-            self._intensity_fft_cache[freq_idx] = self._compute_intensity_fft(freq_idx)
+        # # Check if FFT is already cached for this frequency
+        # if freq_idx not in self._intensity_fft_cache:
+        #     self._intensity_fft_cache[freq_idx] = self._compute_intensity_fft(freq_idx)
         
-        # Get cached FFT data
-        intensity_fft = self._intensity_fft_cache[freq_idx]
+        # # Get cached FFT data
+        # intensity_fft = self._intensity_fft_cache[freq_idx]
+
+        # always compute FFT functionally to avoid storing large arrays
+        intensity_fft = self._compute_intensity_fft(freq_idx)
         
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
@@ -289,8 +290,8 @@ class GridSource(source.ChaoticSource):
         # Compute spatial frequency coordinate grids dynamically
         u_coords_ = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
         v_coords_ = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
-        u_coords = u_coords_*np.cos(params['phi_B']) + v_coords_*np.sin(params['phi_B'])
-        v_coords = -u_coords_*np.sin(params['phi_B']) + v_coords_*np.cos(params['phi_B'])
+        u_coords = u_coords_*jnp.cos(params['phi_B']) + v_coords_*jnp.sin(params['phi_B'])
+        v_coords = -u_coords_*jnp.sin(params['phi_B']) + v_coords_*jnp.cos(params['phi_B'])
         
         # Get FFT result at the closest spatial frequency coordinates
         return self._interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
@@ -310,7 +311,7 @@ class GridSource(source.ChaoticSource):
         np.ndarray
             2D FFT of intensity map, properly normalized
         """
-        from scipy.fft import fft2, fftshift
+        from jax.numpy.fft import fft2, fftshift
         
         # Get the 2D intensity map at this frequency
         intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
@@ -331,35 +332,36 @@ class GridSource(source.ChaoticSource):
         # Calculate total flux for normalization
         total_flux = np.sum(intensity_map_si) * pixel_solid_angle
         
-        if total_flux > 0:
+
             # Proper normalization for discrete FFT to approximate continuous transform
-            intensity_fft *= pixel_solid_angle / total_flux
+        intensity_fft *= pixel_solid_angle / total_flux
         
         return intensity_fft
     
-    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_target: float, v_target: float, u_coords, v_coords) -> complex:
+    @partial(jit, static_argnums=(0,))
+    def _interpolate_fft_result(self, intensity_fft: jnp.ndarray, u_target: float, 
+                                v_target: float, u_coords: jnp.ndarray, 
+                                v_coords: jnp.ndarray) -> complex:
         """
-        Get FFT result at the closest spatial frequency coordinates by computing coordinates dynamically.
+        Get FFT value at the closest grid point (nearest neighbor).
         
         Parameters
         ----------
-        intensity_fft : np.ndarray
+        intensity_fft : jnp.ndarray
             2D FFT of intensity map
         u_target, v_target : float
             Target spatial frequency coordinates
-        distance : float
-            Distance to source in meters for pixel scale calculation
+        u_coords, v_coords : jnp.ndarray
+            Spatial frequency coordinate grids (1D arrays)
             
         Returns
         -------
         complex
-            FFT value at closest coordinates
+            FFT value at closest grid point
         """
-
-        
-        # Find the closest indices for u and v coordinates
-        u_idx = np.argmin(np.abs(u_coords - u_target))
-        v_idx = np.argmin(np.abs(v_coords - v_target))
+        # Find the closest indices using JAX operations
+        u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
+        v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
         
         # Return the FFT value at the closest grid point
         return intensity_fft[v_idx, u_idx]
@@ -396,7 +398,7 @@ class GridSource(source.ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹.
         """
-        return self.flux_interpolator(nu)
+        return np.interp(nu, self.frequency_grid, self.flux_density_grid)
     
     def get_spectrum_info(self):
         """
@@ -491,6 +493,10 @@ class GridSource(source.ChaoticSource):
             real_wave_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
             real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
 
-            return GridSource.create_grid_source_from_files(wave_grid_file=real_wave_file,
-                                                    flux_file =real_flux_file,
-                                                    B=B,  distance=distance)
+            wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
+            flux_data_3d = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+    
+            # normalize flux to 10 pc distance
+            distance = 3.085677581491367e17  # 10 pc in meters
+            flux_data_3d = flux_data_3d / 4 / np.pi/distance**2
+            return GridSource(wavelength_grid, flux_data_3d, B=B,  distance=distance)
