@@ -99,11 +99,6 @@ class GridSource(source.ChaoticSource):
         self.freq_min = np.min(freq_unique)
         self.freq_max = np.max(freq_unique)
 
-        # Pre-compute spatial frequency coordinate grids as instance variables
-        from scipy.fft import fftshift, fftfreq
-        self.u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale))  # cycles per radian
-        self.v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale))  # cycles per radian
-
         # Initialize functional FFT cache for intensity results only
         self._intensity_fft_cache = {}  # Cache only FFT intensity results by frequency
         
@@ -252,7 +247,8 @@ class GridSource(source.ChaoticSource):
             Baseline vector in meters [Bx, By, Bz]. Only the perpendicular
             components (Bx, By) are used in the calculation.
         params : dict, optional
-            Additional parameters (not used, kept for interface compatibility).
+            Additional parameters. Should contain 'distance' key for pixel scale calculation.
+            If not provided, uses self.distance.
             
         Returns
         -------
@@ -260,6 +256,10 @@ class GridSource(source.ChaoticSource):
             Normalized fringe visibility. The magnitude gives the visibility
             amplitude, and the phase gives the visibility phase.
         """
+
+        if params is None:
+            params = self.get_params()
+        
         # Find the closest frequency index
         freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
         
@@ -281,8 +281,11 @@ class GridSource(source.ChaoticSource):
         u_freq = (baseline_perp[0] * self.cos_phi_B + baseline_perp[1] * self.sin_phi_B) / wavelength if len(baseline_perp) > 0 else 0.0
         v_freq = (-baseline_perp[0] * self.sin_phi_B + baseline_perp[1] * self.cos_phi_B) / wavelength if len(baseline_perp) > 1 else 0.0
         
+        # Get distance from params or use instance variable
+        distance = params.get('distance', self.distance) if params else self.distance
+        
         # Get FFT result at the closest spatial frequency coordinates
-        return self._interpolate_fft_result(intensity_fft, u_freq, v_freq)
+        return self._interpolate_fft_result(intensity_fft, u_freq, v_freq, distance)
     
     def _compute_intensity_fft(self, freq_idx: int) -> np.ndarray:
         """
@@ -326,9 +329,9 @@ class GridSource(source.ChaoticSource):
         
         return intensity_fft
     
-    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_target: float, v_target: float) -> complex:
+    def _interpolate_fft_result(self, intensity_fft: np.ndarray, u_target: float, v_target: float, distance: float) -> complex:
         """
-        Get FFT result at the closest spatial frequency coordinates using instance u_coords and v_coords.
+        Get FFT result at the closest spatial frequency coordinates by computing coordinates dynamically.
         
         Parameters
         ----------
@@ -336,15 +339,26 @@ class GridSource(source.ChaoticSource):
             2D FFT of intensity map
         u_target, v_target : float
             Target spatial frequency coordinates
+        distance : float
+            Distance to source in meters for pixel scale calculation
             
         Returns
         -------
         complex
             FFT value at closest coordinates
         """
-        # Find the closest indices for u and v coordinates using instance variables
-        u_idx = np.argmin(np.abs(self.u_coords - u_target))
-        v_idx = np.argmin(np.abs(self.v_coords - v_target))
+        from scipy.fft import fftshift, fftfreq
+        
+        # Calculate pixel scale from distance
+        pixel_scale = self.length_scale / distance  # radians per pixel
+        
+        # Compute spatial frequency coordinate grids dynamically
+        u_coords = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
+        v_coords = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
+        
+        # Find the closest indices for u and v coordinates
+        u_idx = np.argmin(np.abs(u_coords - u_target))
+        v_idx = np.argmin(np.abs(v_coords - v_target))
         
         # Return the FFT value at the closest grid point
         return intensity_fft[v_idx, u_idx]
