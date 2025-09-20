@@ -17,6 +17,8 @@ from jax.numpy.fft import fftshift, fftfreq
 from functools import partial
 from jax import jit
 from jax import numpy as jnp
+import jax
+jax.config.update("jax_enable_x64", True)
 
 class GridSource(source.ChaoticSource):
     """
@@ -44,13 +46,13 @@ class GridSource(source.ChaoticSource):
         """
 
         # Store input grids directly as class parameters
-        self.wavelength_grid = np.array(wavelength_grid)  # [Angstrom]
-        self.flux_data_3d = np.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
+        self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
+        self.flux_data_3d = jnp.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
         self.B = B
         self.distance = distance
         self.phi_B = phi_B  # Position angle for baseline orientation (not used here
-        self.cos_phi_B = np.cos(phi_B)
-        self.sin_phi_B = np.sin(phi_B)  
+        self.cos_phi_B = jnp.cos(phi_B)
+        self.sin_phi_B = jnp.sin(phi_B)  
         
         # Get spatial dimensions
         self.n_wavelengths, self.nx, self.ny = self.flux_data_3d.shape
@@ -64,10 +66,10 @@ class GridSource(source.ChaoticSource):
         self.pixel_scale = self.length_scale / distance # radians per pixel
 
         # normalize flux scale
-        flux_int = self.flux_data_3d.sum(axis=(1,2))
-        spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
-        spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
-        self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
+        # flux_int = self.flux_data_3d.sum(axis=(1,2))
+        # spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
+        # spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
+        # self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
         
         # Convert wavelength to frequency
         c = 2.99792458e8  # m/s
@@ -481,7 +483,15 @@ class GridSource(source.ChaoticSource):
         # Load the data files
         wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
         flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+    
+        # Check for duplicate values
+        if len(wavelength_grid) != len(np.unique(wavelength_grid)):
+            raise ValueError("Wavelength grid contains duplicate values")
         
+        # Check for monotonically increasing values
+        if not np.all(np.diff(wavelength_grid) > 0):
+            raise ValueError("Wavelength grid is not monotonically increasing")
+    
         return GridSource(wavelength_grid, flux_data_3d, B, distance)
     
     @staticmethod
