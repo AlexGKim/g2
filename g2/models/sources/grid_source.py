@@ -136,7 +136,7 @@ class GridSource(source.ChaoticSource):
             - If nu is scalar and n_hat is (N,2): returns array of length N
         """
         # Handle scalar vs array frequency input
-        if np.isscalar(nu):
+        if jnp.isscalar(nu):
             # Single frequency
             freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
             
