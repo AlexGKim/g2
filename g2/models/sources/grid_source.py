@@ -17,6 +17,8 @@ from jax.numpy.fft import fftshift, fftfreq
 from functools import partial
 from jax import jit
 from jax import numpy as jnp
+from jax import config
+config.update("jax_enable_x64", True)
 
 class GridSource(source.ChaoticSource):
     """
@@ -44,8 +46,8 @@ class GridSource(source.ChaoticSource):
         """
 
         # Store input grids directly as class parameters
-        self.wavelength_grid = np.array(wavelength_grid)  # [Angstrom]
-        self.flux_data_3d = np.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
+        self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
+        self.flux_data_3d = jnp.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
         self.B = B
         self.distance = distance
         self.phi_B = phi_B  # Position angle for baseline orientation (not used here
@@ -64,10 +66,10 @@ class GridSource(source.ChaoticSource):
         self.pixel_scale = self.length_scale / distance # radians per pixel
 
         # normalize flux scale
-        flux_int = self.flux_data_3d.sum(axis=(1,2))
-        spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
-        spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
-        self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
+        # flux_int = self.flux_data_3d.sum(axis=(1,2))
+        # spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
+        # spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
+        # self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
         
         # Convert wavelength to frequency
         c = 2.99792458e8  # m/s
@@ -493,10 +495,4 @@ class GridSource(source.ChaoticSource):
             real_wave_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
             real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
 
-            wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
-            flux_data_3d = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
-    
-            # normalize flux to 10 pc distance
-            distance = 3.085677581491367e17  # 10 pc in meters
-            flux_data_3d = flux_data_3d / 4 / np.pi/distance**2
-            return GridSource(wavelength_grid, flux_data_3d, B=B,  distance=distance)
+            return GridSource.create_grid_source_from_files(real_wave_file, real_flux_file, B, distance)
