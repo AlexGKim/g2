@@ -28,8 +28,12 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         
         Parameters
         ----------
-        freq_idx : int
-            Index in the frequency grid
+        intensity_map : jnp.ndarray
+            2D intensity map in [W m⁻² Hz⁻¹] (units don't matter for visibility)
+        wavelength_grid : float
+            Wavelength value (kept for compatibility)
+        pixel_scale : float
+            Pixel scale in radians per pixel
             
         Returns
         -------
@@ -38,28 +42,21 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         """
         from jax.numpy.fft import fft2, fftshift
         
-        # Get the 2D intensity map at this frequency
-        # intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
-        
-        # Convert units to [W/m²/Hz/sr] for proper intensity
-        wavelength_m = wavelength_grid * 1e-10
-        c = 2.99792458e8
-        intensity_map_si = intensity_map * 1e-7 / 1e-4 * 1e-10 * (wavelength_m**2) / c
-        
-        # Convert to intensity per steradian using pixel solid angle
+        # For visibility calculation, units don't matter since it's a normalized quantity
+        # Just use the intensity_map directly and apply the same logic as before
         pixel_solid_angle = pixel_scale**2  # steradians per pixel
-        intensity_map_si /= pixel_solid_angle
         
         # Compute 2D FFT with proper shifting
-        intensity_fft = fft2(intensity_map_si)
+        intensity_fft = fft2(intensity_map)
         intensity_fft = fftshift(intensity_fft)
         
         # Calculate total flux for normalization
-        total_flux = np.sum(intensity_map_si) * pixel_solid_angle
+        total_flux = jnp.sum(intensity_map)
         
-
-        # Proper normalization for discrete FFT to approximate continuous transform
-        intensity_fft *= pixel_solid_angle / total_flux
+        # Proper normalization: visibility should be normalized by total flux
+        # so that V(0) = 1 (zero baseline gives unity visibility)
+        if total_flux > 0:
+            intensity_fft /= total_flux
         
         return intensity_fft
 
@@ -139,15 +136,27 @@ class GridSource(source.ChaoticSource):
 
         # Store input grids directly as class parameters
         self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
-        self.flux_data_3d = jnp.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
+        
+        # Convert flux_grid from [erg/s/cm²/Å] to [W m⁻² Hz⁻¹] during initialization
+        flux_grid_array = jnp.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
+        
+        # Physical constants for unit conversion
+        c = 2.99792458e8  # m/s
+        wavelength_m = self.wavelength_grid * 1e-10  # Convert Å to m
+        
+        # Convert units: [erg/s/cm²/Å] → [W m⁻² Hz⁻¹]
+        # 1e-7: erg → J, 1e4: cm² → m², 1e-10: Å → m, (λ²/c): λ → ν
+        conversion_factor = 1e-7 * 1e4 * 1e-10 * (wavelength_m[:, None, None]**2) / c
+        self.intensity_space = flux_grid_array * conversion_factor  # [W m⁻² Hz⁻¹] - 3D array
+        
         self.B = B
         self.distance = distance
         self.phi_B = phi_B  # Position angle for baseline orientation (not used here
         self.cos_phi_B = jnp.cos(phi_B)
-        self.sin_phi_B = jnp.sin(phi_B)  
+        self.sin_phi_B = jnp.sin(phi_B)
         
         # Get spatial dimensions
-        self.n_wavelengths, self.nx, self.ny = self.flux_data_3d.shape
+        self.n_wavelengths, self.nx, self.ny = self.intensity_space.shape
         
         # Validate input dimensions
         if len(self.wavelength_grid) != self.n_wavelengths:
@@ -163,21 +172,19 @@ class GridSource(source.ChaoticSource):
         # spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
         # self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
         
-        # Convert wavelength to frequency
-        c = 2.99792458e8  # m/s
-        wavelength_m = self.wavelength_grid * 1e-10  # Convert Å to m
+        # Convert wavelength to frequency (reuse wavelength_m from above)
         self.frequency_grid = c / wavelength_m  # [Hz]
         
         # Calculate total flux spectrum by integrating over spatial dimensions
-        self.total_flux_spectrum = np.sum(self.flux_data_3d, axis=(1, 2))  # [erg/s/cm²/Å]
+        # intensity_space is already in [W m⁻² Hz⁻¹], so sum gives total flux
+        self.flux_density_grid = np.sum(self.intensity_space, axis=(1, 2))  # [W m⁻² Hz⁻¹]
+        
+        # Keep old total_flux_spectrum for backward compatibility in plotting
+        # Convert back to [erg/s/cm²/Å] for plotting method
+        self.total_flux_spectrum = self.flux_density_grid * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
+        
+        # Calculate total_photon_spectrum for backward compatibility
         self.total_photon_spectrum = self.total_flux_spectrum * wavelength_m / (6.62607015e-34 * c)  # [photons/s/m²/Å]
-        
-        # Convert to SI units for flux density
-        flux_si_per_wavelength = self.total_flux_spectrum * 1e-7 / 1e-4  # [W/m²/Å]
-        flux_si_per_wavelength *= 1e-10  # [W/m²/m]
-        
-        # Convert to per frequency: F_ν = F_λ * λ²/c
-        self.flux_density_grid = flux_si_per_wavelength * (wavelength_m**2) / c  # [W/m²/Hz]
         
         # Create interpolation function for flux density
         sort_indices = np.argsort(self.frequency_grid)
@@ -233,17 +240,12 @@ class GridSource(source.ChaoticSource):
             freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
             
             # Get the 2D intensity map at this frequency
-            intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
+            intensity_map = self.intensity_space[freq_idx, :, :]  # [W m⁻² Hz⁻¹]
             
-            # Convert units to [W/m²/Hz/sr]
-            wavelength_m = self.wavelength_grid[freq_idx] * 1e-10
-            c = 2.99792458e8
-            intensity_map_si = intensity_map * 1e-7 / 1e-4 * 1e-10 * (wavelength_m**2) / c
-            
-            # Convert to intensity per steradian
-            pixel_scale = self.pixel_scale  # radians per pixel (adjustable)
+            # Convert to intensity per steradian using pixel solid angle
+            pixel_scale = self.pixel_scale  # radians per pixel
             pixel_solid_angle = pixel_scale**2  # steradians per pixel
-            intensity_map_si /= pixel_solid_angle
+            intensity_map_si = intensity_map / pixel_solid_angle  # [W m⁻² Hz⁻¹ sr⁻¹]
             
             return self._interpolate_intensity(intensity_map_si, n_hat, pixel_scale)
         else:
@@ -365,7 +367,7 @@ class GridSource(source.ChaoticSource):
         # intensity_fft = self._intensity_fft_cache[freq_idx]
 
         # always compute FFT functionally to avoid storing large arrays
-        intensity_fft = _compute_map_fft(self.flux_data_3d[freq_idx, :, :],
+        intensity_fft = _compute_map_fft(self.intensity_space[freq_idx, :, :],
                                                 self.wavelength_grid[freq_idx], self.pixel_scale)
 
         # Physical constants
@@ -412,8 +414,8 @@ class GridSource(source.ChaoticSource):
         """
         Calculate total flux F_nu = ∫ I_nu d²n̂.
         
-        Uses the integrated flux from the 3D data, compatible with
-        the updated AbstractSource interface.
+        Uses the pre-calculated total flux spectrum from intensity_space,
+        compatible with the updated AbstractSource interface.
         
         Parameters
         ----------
@@ -507,7 +509,7 @@ class GridSource(source.ChaoticSource):
         """
         # Load the data files
         wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
-        flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D arra
+        flux_grid = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
         # Check for duplicate values
         if len(wavelength_grid) != len(np.unique(wavelength_grid)):
             raise ValueError("Wavelength grid contains duplicate values")
@@ -516,7 +518,7 @@ class GridSource(source.ChaoticSource):
         if not np.all(np.diff(wavelength_grid) > 0):
             raise ValueError("Wavelength grid is not monotonically increasing")
     
-        return GridSource(wavelength_grid, flux_data_3d, B, distance)
+        return GridSource(wavelength_grid, flux_grid, B, distance)
     
     @staticmethod
     def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
@@ -528,9 +530,9 @@ class GridSource(source.ChaoticSource):
             real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
 
             wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
-            flux_data_3d = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+            flux_grid = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
     
             # normalize flux to 10 pc distance
             distance = 3.085677581491367e17  # 10 pc in meters
-            flux_data_3d = flux_data_3d / 4 / np.pi/distance**2
-            return GridSource(wavelength_grid, flux_data_3d, B=B,  distance=distance)
+            flux_grid = flux_grid / 4 / np.pi/distance**2
+            return GridSource(wavelength_grid, flux_grid, B=B,  distance=distance)

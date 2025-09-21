@@ -583,7 +583,8 @@ def plot_integration_tests():
         total_flux_direct = source.total_flux(test_freq)
         
         # Numerical integration over intensity
-        extent = 15e-6
+        # Use extent based on actual source size (pixel_scale * grid_size / 2)
+        extent = source.pixel_scale * min(source.nx, source.ny) / 4  # Cover quarter of the grid
         n_points = min(source.nx, source.ny, 20)  # Cap at 20 for performance
         x_range = np.linspace(-extent, extent, n_points)
         y_range = np.linspace(-extent, extent, n_points)
