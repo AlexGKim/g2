@@ -20,7 +20,49 @@ from jax import numpy as jnp
 import jax
 jax.config.update("jax_enable_x64", True)
 
-@partial(jax.custom_jvp, static_argnums=(0,3,5))
+def _compute_intensity_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
+        """
+        Functional computation of FFT for a specific frequency using native spatial gridding.
+        Returns only the FFT intensity result for caching.
+        
+        Parameters
+        ----------
+        freq_idx : int
+            Index in the frequency grid
+            
+        Returns
+        -------
+        np.ndarray
+            2D FFT of intensity map, properly normalized
+        """
+        from jax.numpy.fft import fft2, fftshift
+        
+        # Get the 2D intensity map at this frequency
+        # intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
+        
+        # Convert units to [W/m²/Hz/sr] for proper intensity
+        wavelength_m = wavelength_grid * 1e-10
+        c = 2.99792458e8
+        intensity_map_si = intensity_map * 1e-7 / 1e-4 * 1e-10 * (wavelength_m**2) / c
+        
+        # Convert to intensity per steradian using pixel solid angle
+        pixel_solid_angle = pixel_scale**2  # steradians per pixel
+        intensity_map_si /= pixel_solid_angle
+        
+        # Compute 2D FFT with proper shifting
+        intensity_fft = fft2(intensity_map_si)
+        intensity_fft = fftshift(intensity_fft)
+        
+        # Calculate total flux for normalization
+        total_flux = np.sum(intensity_map_si) * pixel_solid_angle
+        
+
+        # Proper normalization for discrete FFT to approximate continuous transform
+        intensity_fft *= pixel_solid_angle / total_flux
+        
+        return intensity_fft
+
+@partial(jax.custom_jvp,  nondiff_argnums=())
 def _interpolate_fft_result(intensity_fft: jnp.ndarray, u_target: float, 
                             v_target: float, u_coords: jnp.ndarray, 
                             v_coords: jnp.ndarray) -> complex:
@@ -320,8 +362,9 @@ class GridSource(source.ChaoticSource):
         # intensity_fft = self._intensity_fft_cache[freq_idx]
 
         # always compute FFT functionally to avoid storing large arrays
-        intensity_fft = self._compute_intensity_fft(freq_idx)
-        
+        intensity_fft = _compute_intensity_fft(self.flux_data_3d[freq_idx, :, :],
+                                                self.wavelength_grid[freq_idx], self.pixel_scale)
+
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
@@ -345,7 +388,7 @@ class GridSource(source.ChaoticSource):
         # Get FFT result at the closest spatial frequency coordinates
         return _interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
     
-    def _compute_intensity_fft(self, freq_idx: int) -> np.ndarray:
+    def _compute_intensity_fft(intensity_map):
         """
         Functional computation of FFT for a specific frequency using native spatial gridding.
         Returns only the FFT intensity result for caching.
@@ -363,7 +406,7 @@ class GridSource(source.ChaoticSource):
         from jax.numpy.fft import fft2, fftshift
         
         # Get the 2D intensity map at this frequency
-        intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
+        # intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
         
         # Convert units to [W/m²/Hz/sr] for proper intensity
         wavelength_m = self.wavelength_grid[freq_idx] * 1e-10
