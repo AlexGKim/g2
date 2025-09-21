@@ -20,7 +20,8 @@ from jax import numpy as jnp
 import jax
 jax.config.update("jax_enable_x64", True)
 
-def _compute_intensity_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
+@partial(jax.custom_jvp,  nondiff_argnums=())
+def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         """
         Functional computation of FFT for a specific frequency using native spatial gridding.
         Returns only the FFT intensity result for caching.
@@ -62,7 +63,26 @@ def _compute_intensity_fft(intensity_map, wavelength_grid, pixel_scale) -> np.nd
         
         return intensity_fft
 
-@partial(jax.custom_jvp,  nondiff_argnums=())
+@_compute_map_fft.defjvp
+def _compute_map_fft_jvp(primals, tangents):
+    """Custom JVP rule for J1"""
+    x, = primals
+    dx, = tangents
+    y = _compute_map_fft(x)
+    
+    # Also need to wrap jv for the derivative
+    result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
+    jv2 = pure_callback(
+        lambda x: jv(2, np.asarray(x)).astype(x.dtype),
+        result_shape,
+        x,
+        vmap_method='sequential'
+    )
+    
+    dy = y/x - jv2
+    return y, dy * dx
+
+# @partial(jit, static_argnums=(0,3,4))
 def _interpolate_fft_result(intensity_fft: jnp.ndarray, u_target: float, 
                             v_target: float, u_coords: jnp.ndarray, 
                             v_coords: jnp.ndarray) -> complex:
@@ -90,24 +110,7 @@ def _interpolate_fft_result(intensity_fft: jnp.ndarray, u_target: float,
     # Return the FFT value at the closest grid point
     return intensity_fft[v_idx, u_idx]
 
-@_interpolate_fft_result.defjvp
-def _interpolate_fft_result_jvp(primals, tangents):
-    """Custom JVP rule for J1"""
-    x, = primals
-    dx, = tangents
-    y = _interpolate_fft_result(x)
-    
-    # Also need to wrap jv for the derivative
-    result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
-    jv2 = pure_callback(
-        lambda x: jv(2, np.asarray(x)).astype(x.dtype),
-        result_shape,
-        x,
-        vmap_method='sequential'
-    )
-    
-    dy = y/x - jv2
-    return y, dy * dx
+
 
 class GridSource(source.ChaoticSource):
     """
@@ -362,7 +365,7 @@ class GridSource(source.ChaoticSource):
         # intensity_fft = self._intensity_fft_cache[freq_idx]
 
         # always compute FFT functionally to avoid storing large arrays
-        intensity_fft = _compute_intensity_fft(self.flux_data_3d[freq_idx, :, :],
+        intensity_fft = _compute_map_fft(self.flux_data_3d[freq_idx, :, :],
                                                 self.wavelength_grid[freq_idx], self.pixel_scale)
 
         # Physical constants
@@ -388,48 +391,7 @@ class GridSource(source.ChaoticSource):
         # Get FFT result at the closest spatial frequency coordinates
         return _interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
     
-    def _compute_intensity_fft(intensity_map):
-        """
-        Functional computation of FFT for a specific frequency using native spatial gridding.
-        Returns only the FFT intensity result for caching.
-        
-        Parameters
-        ----------
-        freq_idx : int
-            Index in the frequency grid
-            
-        Returns
-        -------
-        np.ndarray
-            2D FFT of intensity map, properly normalized
-        """
-        from jax.numpy.fft import fft2, fftshift
-        
-        # Get the 2D intensity map at this frequency
-        # intensity_map = self.flux_data_3d[freq_idx, :, :]  # [erg/s/cm²/Å]
-        
-        # Convert units to [W/m²/Hz/sr] for proper intensity
-        wavelength_m = self.wavelength_grid[freq_idx] * 1e-10
-        c = 2.99792458e8
-        intensity_map_si = intensity_map * 1e-7 / 1e-4 * 1e-10 * (wavelength_m**2) / c
-        
-        # Convert to intensity per steradian using pixel solid angle
-        pixel_solid_angle = self.pixel_scale**2  # steradians per pixel
-        intensity_map_si /= pixel_solid_angle
-        
-        # Compute 2D FFT with proper shifting
-        intensity_fft = fft2(intensity_map_si)
-        intensity_fft = fftshift(intensity_fft)
-        
-        # Calculate total flux for normalization
-        total_flux = np.sum(intensity_map_si) * pixel_solid_angle
-        
 
-            # Proper normalization for discrete FFT to approximate continuous transform
-        intensity_fft *= pixel_solid_angle / total_flux
-        
-        return intensity_fft
-    
     
     def get_params(self) -> dict:
         """
@@ -545,8 +507,7 @@ class GridSource(source.ChaoticSource):
         """
         # Load the data files
         wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
-        flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
-    
+        flux_data_3d = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D arra
         # Check for duplicate values
         if len(wavelength_grid) != len(np.unique(wavelength_grid)):
             raise ValueError("Wavelength grid contains duplicate values")
