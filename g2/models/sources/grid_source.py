@@ -20,6 +20,53 @@ from jax import numpy as jnp
 import jax
 jax.config.update("jax_enable_x64", True)
 
+@partial(jax.custom_jvp, static_argnums=(0,3,5))
+def _interpolate_fft_result(intensity_fft: jnp.ndarray, u_target: float, 
+                            v_target: float, u_coords: jnp.ndarray, 
+                            v_coords: jnp.ndarray) -> complex:
+    """
+    Get FFT value at the closest grid point (nearest neighbor).
+    
+    Parameters
+    ----------
+    intensity_fft : jnp.ndarray
+        2D FFT of intensity map
+    u_target, v_target : float
+        Target spatial frequency coordinates
+    u_coords, v_coords : jnp.ndarray
+        Spatial frequency coordinate grids (1D arrays)
+        
+    Returns
+    -------
+    complex
+        FFT value at closest grid point
+    """
+    # Find the closest indices using JAX operations
+    u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
+    v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
+    
+    # Return the FFT value at the closest grid point
+    return intensity_fft[v_idx, u_idx]
+
+@_interpolate_fft_result.defjvp
+def _interpolate_fft_result_jvp(primals, tangents):
+    """Custom JVP rule for J1"""
+    x, = primals
+    dx, = tangents
+    y = _interpolate_fft_result(x)
+    
+    # Also need to wrap jv for the derivative
+    result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
+    jv2 = pure_callback(
+        lambda x: jv(2, np.asarray(x)).astype(x.dtype),
+        result_shape,
+        x,
+        vmap_method='sequential'
+    )
+    
+    dy = y/x - jv2
+    return y, dy * dx
+
 class GridSource(source.ChaoticSource):
     """
     Sedona model source for SN2011fe using numpy data files with FFT-based visibility calculation
@@ -296,7 +343,7 @@ class GridSource(source.ChaoticSource):
         v_coords = -u_coords_*jnp.sin(params['phi_B']) + v_coords_*jnp.cos(params['phi_B'])
         
         # Get FFT result at the closest spatial frequency coordinates
-        return self._interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
+        return _interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
     
     def _compute_intensity_fft(self, freq_idx: int) -> np.ndarray:
         """
@@ -340,34 +387,7 @@ class GridSource(source.ChaoticSource):
         
         return intensity_fft
     
-    @partial(jit, static_argnums=(0,))
-    def _interpolate_fft_result(self, intensity_fft: jnp.ndarray, u_target: float, 
-                                v_target: float, u_coords: jnp.ndarray, 
-                                v_coords: jnp.ndarray) -> complex:
-        """
-        Get FFT value at the closest grid point (nearest neighbor).
-        
-        Parameters
-        ----------
-        intensity_fft : jnp.ndarray
-            2D FFT of intensity map
-        u_target, v_target : float
-            Target spatial frequency coordinates
-        u_coords, v_coords : jnp.ndarray
-            Spatial frequency coordinate grids (1D arrays)
-            
-        Returns
-        -------
-        complex
-            FFT value at closest grid point
-        """
-        # Find the closest indices using JAX operations
-        u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
-        v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
-        
-        # Return the FFT value at the closest grid point
-        return intensity_fft[v_idx, u_idx]
-
+    
     def get_params(self) -> dict:
         """
         Get parameters that define the source model.
