@@ -7,7 +7,6 @@ import numpy as np
 from typing import Union
 import sys
 import os
-import sncosmo
 from pathlib import Path
 
 from ..base import source
@@ -117,7 +116,7 @@ class GridSource(source.ChaoticSource):
     with efficient FFT-based visibility calculations and caching.
     """
     
-    def __init__(self, wavelength_grid: np.ndarray, flux_grid: np.ndarray,
+    def __init__(self, wavelength_grid: np.ndarray, flux_grid: np.ndarray, pixel_scale_m: float,
                  B: float = 9.98, distance: float = 204379200000000.0, phi_B: float = 0.0):
         """
         Initialize Sedona SN2011fe source with wavelength and flux grids as parameters
@@ -128,6 +127,8 @@ class GridSource(source.ChaoticSource):
             Wavelength grid in Angstrom, shape (n_wavelengths,)
         flux_grid : np.ndarray
             3D flux data in [erg/s/cm²/Å], shape (n_wavelengths, nx, ny)
+        pixel_scale_m : float
+            Pixel scale in m per pixel
         B : float
             Magnitude for flux normalization
         distance : float
@@ -138,20 +139,25 @@ class GridSource(source.ChaoticSource):
         self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
         
         # Convert flux_grid from [erg/s/cm²/Å] to [W m⁻² Hz⁻¹] during initialization
-        flux_grid_array = jnp.array(flux_grid)  # [erg/s/cm²/Å] - 3D array
+        flux_grid_array = flux_grid  # [erg/s/cm²/Å] - 3D array
         
         # Physical constants for unit conversion
         c = 2.99792458e8  # m/s
-        wavelength_m = self.wavelength_grid * 1e-10  # Convert Å to m
+        wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
         
         # Convert units: [erg/s/cm²/Å] → [W m⁻² Hz⁻¹]
         # 1e-7: erg → J, 1e4: cm² → m², 1e-10: Å → m, (λ²/c): λ → ν
         conversion_factor = 1e-7 * 1e4 * 1e-10 * (wavelength_m[:, None, None]**2) / c
-        self.intensity_space = flux_grid_array * conversion_factor  # [W m⁻² Hz⁻¹] - 3D array
+        self.intensity_space = jnp.array(flux_grid_array * conversion_factor)  # [W m⁻² Hz⁻¹] - 3D array
         
+        self.pixel_scale_m = pixel_scale_m  # radians per pixel
+
+        # Store parameters
         self.B = B
         self.distance = distance
         self.phi_B = phi_B  # Position angle for baseline orientation (not used here
+
+        # Precompute trigonometric values for baseline rotation
         self.cos_phi_B = jnp.cos(phi_B)
         self.sin_phi_B = jnp.sin(phi_B)
         
@@ -162,10 +168,6 @@ class GridSource(source.ChaoticSource):
         if len(self.wavelength_grid) != self.n_wavelengths:
             raise ValueError(f"Wavelength grid length {len(self.wavelength_grid)} doesn't match flux grid wavelength dimension {self.n_wavelengths}")
         
-        # normalize angular scale
-        self.length_scale = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
-        self.pixel_scale = self.length_scale / distance # radians per pixel
-
         # normalize flux scale
         # flux_int = self.flux_data_3d.sum(axis=(1,2))
         # spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
@@ -210,6 +212,18 @@ class GridSource(source.ChaoticSource):
         # print(f"  Spatial grid: {self.nx} × {self.ny}")
         # print(f"  Wavelength points: {self.n_wavelengths}")
     
+    def pixel_scale(self) -> float:
+
+        """
+        Get pixel scale in radians per pixel
+        
+        Returns
+        -------
+        float
+            Pixel scale in radians per pixel
+        """
+        return self.pixel_scale_m / self.distance  # radians per pixel
+    
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
         """
         Calculate specific intensity I_nu(nu, n_hat)
@@ -243,7 +257,7 @@ class GridSource(source.ChaoticSource):
             intensity_map = self.intensity_space[freq_idx, :, :]  # [W m⁻² Hz⁻¹]
             
             # Convert to intensity per steradian using pixel solid angle
-            pixel_scale = self.pixel_scale  # radians per pixel
+            pixel_scale = self.pixel_scale_m/self.distance  # radians per pixel
             pixel_solid_angle = pixel_scale**2  # steradians per pixel
             intensity_map_si = intensity_map / pixel_solid_angle  # [W m⁻² Hz⁻¹ sr⁻¹]
             
@@ -368,7 +382,8 @@ class GridSource(source.ChaoticSource):
 
         # always compute FFT functionally to avoid storing large arrays
         intensity_fft = _compute_map_fft(self.intensity_space[freq_idx, :, :],
-                                                self.wavelength_grid[freq_idx], self.pixel_scale)
+                                                self.wavelength_grid[freq_idx],
+                                                self.pixel_scale_m/params['distance'])
 
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
@@ -382,13 +397,11 @@ class GridSource(source.ChaoticSource):
         v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
         
         # Calculate pixel scale from distance
-        pixel_scale = self.length_scale / params['distance']  # radians per pixel
+        pixel_scale = self.pixel_scale_m / params['distance']  # radians per pixel
         
         # Compute spatial frequency coordinate grids dynamically
-        u_coords_ = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
-        v_coords_ = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
-        u_coords = u_coords_*jnp.cos(params['phi_B']) + v_coords_*jnp.sin(params['phi_B'])
-        v_coords = -u_coords_*jnp.sin(params['phi_B']) + v_coords_*jnp.cos(params['phi_B'])
+        u_coords = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
+        v_coords = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
         
         # Get FFT result at the closest spatial frequency coordinates
         return _interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
@@ -531,8 +544,7 @@ class GridSource(source.ChaoticSource):
 
             wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
             flux_grid = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
-    
-            # normalize flux to 10 pc distance
-            distance = 3.085677581491367e17  # 10 pc in meters
-            flux_grid = flux_grid / 4 / np.pi/distance**2
-            return GridSource(wavelength_grid, flux_grid, B=B,  distance=distance)
+
+            pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
+
+            return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B,  distance=distance)

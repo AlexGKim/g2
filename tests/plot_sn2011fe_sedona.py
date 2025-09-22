@@ -236,7 +236,7 @@ def plot_intensity_calculations():
         test_freq = 5e14  # ~600 nm
         
         # Plot 1: Intensity vs direction (single frequency)
-        directions = np.linspace(-source.pixel_scale*source.nx, source.pixel_scale*source.ny, 50)  # radians
+        directions = np.linspace(-source.pixel_scale()*source.nx, source.pixel_scale()*source.ny, 50)  # radians
         intensities_x = []
         intensities_y = []
         
@@ -270,7 +270,7 @@ def plot_intensity_calculations():
         ax2.grid(True, alpha=0.3)
         
         # Plot 3: 2D intensity map
-        extent = source.pixel_scale*source.nx/2  # radians
+        extent = source.pixel_scale()*source.nx/2  # radians
         n_points = min(source.nx, source.ny, 25)  # Cap at 25 for performance
         x_range = np.linspace(-extent, extent, n_points)
         y_range = np.linspace(-extent, extent, n_points)
@@ -295,7 +295,7 @@ def plot_intensity_calculations():
         # Plot 4: Multiple directions test (polar plot)
         n_directions = 20
         angles = np.linspace(0, 2*np.pi, n_directions)
-        radius = 3 * source.pixel_scale  # radians
+        radius = 3 * source.pixel_scale()  # radians
         
         directions_multi = np.array([[radius * np.cos(a), radius * np.sin(a)] for a in angles])
         intensities_multi = source.intensity(test_freq, directions_multi)
@@ -332,7 +332,7 @@ def plot_visibility_calculations():
         
         # Estimate source angular size from intensity profile
         # Use the pixel scale as a rough estimate of angular size
-        theta_estimate = source.pixel_scale * 6.2  # Rough estimate
+        theta_estimate = source.pixel_scale() * 6.2  # Rough estimate
 
         # print(source.pixel_scale, theta_estimate, 1.22*wavelength/source.pixel_scale)
 
@@ -584,7 +584,7 @@ def plot_integration_tests():
         
         # Numerical integration over intensity
         # Use extent based on actual source size (pixel_scale * grid_size / 2)
-        extent = source.pixel_scale * min(source.nx, source.ny) / 4  # Cover quarter of the grid
+        extent = source.pixel_scale() * min(source.nx, source.ny) / 4  # Cover quarter of the grid
         n_points = min(source.nx, source.ny, 20)  # Cap at 20 for performance
         x_range = np.linspace(-extent, extent, n_points)
         y_range = np.linspace(-extent, extent, n_points)
@@ -665,7 +665,7 @@ def plot_integration_tests():
         # Add theoretical uniform disk for comparison
         try:
             from scipy.special import j1
-            theta_disk = source.pixel_scale * 3  # Estimate disk size
+            theta_disk = source.pixel_scale() * 3  # Estimate disk size
             uniform_vis = []
             for B in baseline_lengths:
                 u = B / wavelength
@@ -699,7 +699,7 @@ def plot_integration_tests():
             info['spatial_grid'][0] * info['spatial_grid'][1],
             info['frequency_range_hz'][1] - info['frequency_range_hz'][0],
             info['peak_flux_density_w_m2_hz'],
-            source.pixel_scale * 1e6
+            source.pixel_scale() * 1e6
         ]
         
         # Normalize for plotting
