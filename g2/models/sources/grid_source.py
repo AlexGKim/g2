@@ -179,19 +179,21 @@ class GridSource(source.ChaoticSource):
         
         # Calculate total flux spectrum by integrating over spatial dimensions
         # intensity_space is already in [W m⁻² Hz⁻¹], so sum gives total flux
-        self.flux_density_grid = np.sum(self.intensity_space, axis=(1, 2))  # [W m⁻² Hz⁻¹]
+        self.specific_flux = np.sum(self.intensity_space, axis=(1, 2))  # [W m⁻² Hz⁻¹]
         
         # Keep old total_flux_spectrum for backward compatibility in plotting
         # Convert back to [erg/s/cm²/Å] for plotting method
-        self.total_flux_spectrum = self.flux_density_grid * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
+        # self.total_flux_spectrum = self.specific_flux * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
-        self.total_photon_spectrum = self.total_flux_spectrum * wavelength_m / (6.62607015e-34 * c)  # [photons/s/m²/Å]
+        # Convert from flux density [W m⁻² Hz⁻¹] to photon flux [photons/s/m²/Hz]
+        h = 6.62607015e-34  # Planck constant
+        self.specific_photon_flux = self.specific_flux / (h * self.frequency_grid)  # [photons/s/m²/Hz]
         
         # Create interpolation function for flux density
         sort_indices = np.argsort(self.frequency_grid)
         freq_sorted = self.frequency_grid[sort_indices]
-        flux_sorted = self.flux_density_grid[sort_indices]
+        flux_sorted = self.specific_flux[sort_indices]
         
         # Remove any duplicate frequencies
         unique_mask = np.diff(freq_sorted, prepend=freq_sorted[0]-1) > 0
@@ -440,7 +442,7 @@ class GridSource(source.ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹.
         """
-        return np.interp(nu, self.frequency_grid, self.flux_density_grid)
+        return np.interp(nu, self.frequency_grid, self.specific_flux)
     
     def get_spectrum_info(self):
         """
@@ -453,8 +455,8 @@ class GridSource(source.ChaoticSource):
         return {
             'wavelength_range_angstrom': (np.min(self.wavelength_grid), np.max(self.wavelength_grid)),
             'frequency_range_hz': (self.freq_min, self.freq_max),
-            'peak_flux_density_w_m2_hz': np.max(self.flux_density_grid),
-            'total_luminosity_estimate': np.trapezoid(self.flux_density_grid, self.frequency_grid),
+            'peak_flux_density_w_m2_hz': np.max(self.specific_flux),
+            'total_luminosity_estimate': np.trapezoid(self.specific_flux, self.frequency_grid),
             'spatial_grid': (self.nx, self.ny),
             'wavelength_points': self.n_wavelengths
         }
