@@ -54,8 +54,7 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         
         # Proper normalization: visibility should be normalized by total flux
         # so that V(0) = 1 (zero baseline gives unity visibility)
-        if total_flux > 0:
-            intensity_fft /= total_flux
+        intensity_fft /= total_flux
         
         return intensity_fft
 
