@@ -43,18 +43,20 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         
         # For visibility calculation, units don't matter since it's a normalized quantity
         # Just use the intensity_map directly and apply the same logic as before
-        pixel_solid_angle = pixel_scale**2  # steradians per pixel
-        
+        # pixel_solid_angle = pixel_scale**2  # steradians per pixel
+
+        total_flux = jnp.sum(intensity_map)
+
         # Compute 2D FFT with proper shifting
-        intensity_fft = fft2(intensity_map)
+        intensity_fft = fft2(intensity_map/total_flux)
         intensity_fft = fftshift(intensity_fft)
         
         # Calculate total flux for normalization
-        total_flux = jnp.sum(intensity_map)
+        # total_flux = jnp.sum(intensity_map)
         
         # Proper normalization: visibility should be normalized by total flux
         # so that V(0) = 1 (zero baseline gives unity visibility)
-        intensity_fft /= total_flux
+        # intensity_fft /= total_flux
         
         return intensity_fft
 
@@ -146,7 +148,7 @@ class GridSource(source.ChaoticSource):
         self.flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10) #Convert to [W/m²/Å] for internal use if needed
         
         # Convert from [W Hz^-1] to [W Hz^-1 m^-2 sr^-1] assuming isotropic emission
-        self.intensity_data = self.flux_grid_mks / (4 * np.pi * pixel_scale_m**2)  # [W/m²/Hz] assuming isotropic emission
+        self.intensity_data = jnp.array(self.flux_grid_mks / (4 * np.pi * pixel_scale_m**2))  # [W/m²/Hz] assuming isotropic emission
 
         # Calculate total flux spectrum by integrating over spatial dimensions
         # intensity_space is already in [W m⁻² Hz⁻¹], so sum gives total flux
@@ -185,9 +187,7 @@ class GridSource(source.ChaoticSource):
         
         # Convert wavelength to frequency (reuse wavelength_m from above)
         # self.frequency_grid = c / wavelength_m  # [Hz]
-        
-
-        
+                
         # Keep old total_flux_spectrum for backward compatibility in plotting
         # Convert back to [erg/s/cm²/Å] for plotting method
         self.total_flux_spectrum = self.specific_flux * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
@@ -397,7 +397,7 @@ class GridSource(source.ChaoticSource):
         # intensity_fft = self._intensity_fft_cache[freq_idx]
 
         # always compute FFT functionally to avoid storing large arrays
-        intensity_fft = _compute_map_fft(self.intensity_space[freq_idx, :, :],
+        intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :],
                                                 self.wavelength_grid[freq_idx],
                                                 self.pixel_scale_m/params['distance'])
 
