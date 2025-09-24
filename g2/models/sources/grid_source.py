@@ -125,7 +125,7 @@ class GridSource(source.ChaoticSource):
         wavelength_grid : np.ndarray
             Wavelength grid in Angstrom, shape (n_wavelengths,)
         flux_grid : np.ndarray
-            3D flux data in [erg/s/cm²/Å], shape (n_wavelengths, nx, ny)
+            3D flux data in [erg/s/Å], shape (n_wavelengths, nx, ny)
         pixel_scale_m : float
             Pixel scale in m per pixel
         B : float
@@ -133,23 +133,33 @@ class GridSource(source.ChaoticSource):
         distance : float
             Distance to source in meters
         """
+        c = 2.99792458e8  # m/s
 
         # Store input grids directly as class parameters
         self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
+        self.frequency_grid = c / (wavelength_grid * 1e-10)  # [Hz]
+        self.pixel_scale_m = pixel_scale_m  # radians per pixel
+
+        self.flux_grid = flux_grid  # [erg/s/Å] - 3D array
         
-        # Convert flux_grid from [erg/s/cm²/Å] to [W m⁻² Hz⁻¹] during initialization
-        flux_grid_array = flux_grid  # [erg/s/cm²/Å] - 3D array
+        # Convert flux_grid from [erg/s/Å] to [W Hz⁻¹] during initialization
+        self.flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10) #Convert to [W/m²/Å] for internal use if needed
         
+        # Convert from [W Hz^-1] to [W Hz^-1 m^-2 sr^-1] assuming isotropic emission
+        self.intensity_data = self.flux_grid_mks / (4 * np.pi * pixel_scale_m**2)  # [W/m²/Hz] assuming isotropic emission
+
+        # Calculate total flux spectrum by integrating over spatial dimensions
+        # intensity_space is already in [W m⁻² Hz⁻¹], so sum gives total flux
+        self.specific_flux = np.sum(self.intensity_data, axis=(1, 2))  # [W m⁻² Hz⁻¹]
+
         # Physical constants for unit conversion
-        c = 2.99792458e8  # m/s
         wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
         
         # Convert units: [erg/s/cm²/Å] → [W m⁻² Hz⁻¹]
         # 1e-7: erg → J, 1e4: cm² → m², 1e-10: Å → m, (λ²/c): λ → ν
         conversion_factor = 1e-7 * 1e4 * 1e-10 * (wavelength_m[:, None, None]**2) / c
-        self.intensity_space = jnp.array(flux_grid_array * conversion_factor)  # [W m⁻² Hz⁻¹] - 3D array
+        self.intensity_space = jnp.array(self.flux_grid * conversion_factor)  # [W m⁻² Hz⁻¹] - 3D array
         
-        self.pixel_scale_m = pixel_scale_m  # radians per pixel
 
         # Store parameters
         self.B = B
@@ -174,15 +184,13 @@ class GridSource(source.ChaoticSource):
         # self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
         
         # Convert wavelength to frequency (reuse wavelength_m from above)
-        self.frequency_grid = c / wavelength_m  # [Hz]
+        # self.frequency_grid = c / wavelength_m  # [Hz]
         
-        # Calculate total flux spectrum by integrating over spatial dimensions
-        # intensity_space is already in [W m⁻² Hz⁻¹], so sum gives total flux
-        self.specific_flux = np.sum(self.intensity_space, axis=(1, 2))  # [W m⁻² Hz⁻¹]
+
         
         # Keep old total_flux_spectrum for backward compatibility in plotting
         # Convert back to [erg/s/cm²/Å] for plotting method
-        # self.total_flux_spectrum = self.specific_flux * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
+        self.total_flux_spectrum = self.specific_flux * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
         # Convert from flux density [W m⁻² Hz⁻¹] to photon flux [photons/s/m²/Hz]
@@ -225,7 +233,7 @@ class GridSource(source.ChaoticSource):
         """
         return self.pixel_scale_m / self.distance  # radians per pixel
     
-    def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
+    def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, params=None) -> Union[float, np.ndarray]:
         """
         Calculate specific intensity I_nu(nu, n_hat)
         
@@ -249,20 +257,27 @@ class GridSource(source.ChaoticSource):
             - If nu is array and n_hat is (2,): returns array matching nu
             - If nu is scalar and n_hat is (N,2): returns array of length N
         """
+
+        if params is None:
+            params = self.get_params()
+        
         # Handle scalar vs array frequency input
         if jnp.isscalar(nu):
             # Single frequency
             freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
-            
-            # Get the 2D intensity map at this frequency
-            intensity_map = self.intensity_space[freq_idx, :, :]  # [W m⁻² Hz⁻¹]
-            
+
             # Convert to intensity per steradian using pixel solid angle
-            pixel_scale = self.pixel_scale_m/self.distance  # radians per pixel
-            pixel_solid_angle = pixel_scale**2  # steradians per pixel
-            intensity_map_si = intensity_map / pixel_solid_angle  # [W m⁻² Hz⁻¹ sr⁻¹]
+            pixel_scale = self.pixel_scale_m/params['distance']  # radians per pixel
+            # pixel_solid_angle = pixel_scale**2  # steradians per pixel
+
+            # # Get the 2D intensity map at this frequency
+            # intensity_map = (self.flux_grid_mks[freq_idx, :, :] 
+            #                  / (4 * np.pi * params['distance']**2) / pixel_solid_angle ) # [W m⁻² Hz⁻¹]
             
-            return self._interpolate_intensity(intensity_map_si, n_hat, pixel_scale)
+
+            # intensity_map_si = intensity_map / pixel_solid_angle  # [W m⁻² Hz⁻¹ sr⁻¹]
+            
+            return self._interpolate_intensity(self.intensity_data[freq_idx,:,:], n_hat, pixel_scale)
         else:
             # Array of frequencies
             nu_array = np.asarray(nu)
@@ -270,7 +285,7 @@ class GridSource(source.ChaoticSource):
                 # Single direction, multiple frequencies
                 results = np.zeros_like(nu_array)
                 for i, freq in enumerate(nu_array):
-                    results[i] = self.intensity(freq, n_hat)
+                    results[i] = self.intensity(freq, n_hat, params=params)
                 return results
             else:
                 # Multiple directions and frequencies - not typically used
