@@ -414,16 +414,103 @@ class GridSource(source.ChaoticSource):
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
         
+        # Apply phi_B rotation to baseline coordinates using params (not class attributes)
+        cos_phi_B = jnp.cos(params['phi_B'])
+        sin_phi_B = jnp.sin(params['phi_B'])
+        baseline_rotated = jnp.array([
+            baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
+            -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
+        ]) if len(baseline_perp) >= 2 else jnp.array([baseline_perp[0], 0.0])
+        
         # Convert baseline to spatial frequency coordinates in cycles per meter
         # The FFT was computed using pixel_scale_m (meters per pixel), so we need cycles per meter
-        u_freq_meters = baseline_perp[0] / wavelength / params['distance'] if len(baseline_perp) > 0 else 0.0
-        v_freq_meters = baseline_perp[1] / wavelength / params['distance'] if len(baseline_perp) > 1 else 0.0
+        u_freq_meters = baseline_rotated[0] / wavelength / params['distance'] if len(baseline_rotated) > 0 else 0.0
+        v_freq_meters = baseline_rotated[1] / wavelength / params['distance'] if len(baseline_rotated) > 1 else 0.0
         
         # Use class method to interpolate FFT result
         return self._interpolate_fft_result(intensity_fft, u_freq_meters, v_freq_meters)
     
 
     
+    def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
+        """
+        Calculate the Jacobian of |V|² with respect to source parameters.
+        
+        This method uses JAX's automatic differentiation on the FFT computation,
+        making the intensity data depend on the parameters through scaling.
+        
+        Parameters
+        ----------
+        nu_0 : float
+            Central frequency in Hz.
+        baseline : array_like, shape (3,)
+            Baseline vector in meters [Bx, By, Bz].
+        params : dict, optional
+            Source parameters. If None, uses current source parameters.
+            
+        Returns
+        -------
+        jacobian : dict
+            Dictionary with same keys as params, containing the partial
+            derivatives of |V|² with respect to each parameter.
+        """
+        if params is None:
+            params = self.get_params()
+        
+        # Find the frequency index (use the same non-differentiable operation as V)
+        freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
+        
+        # Physical constants
+        c = 2.99792458e8  # Speed of light in m/s
+        wavelength = c / nu_0
+        
+        # Extract perpendicular baseline components
+        baseline_perp = baseline[:2]
+        
+        # Define a function that computes |V|² with parameter dependence
+        def V_squared_with_params(params_dict):
+            # Make intensity data depend on parameters
+            # Distance affects the angular scale, which we can model as a scaling of the intensity
+            distance_scale = params_dict['distance'] / self.distance  # Relative distance change
+            
+            # Scale the intensity data based on distance (inverse square law for flux)
+            scaled_intensity = self.intensity_data[freq_idx, :, :] / (distance_scale**2)
+            
+            # Apply magnitude scaling based on B parameter
+            B_scale = 10**((self.B - params_dict['B']) / 2.5)  # Magnitude scaling
+            scaled_intensity = scaled_intensity * B_scale
+            
+            # Compute FFT of the scaled intensity
+            intensity_fft = _compute_map_fft(scaled_intensity, self.wavelength_grid[freq_idx])
+            
+            # Apply phi_B rotation to baseline coordinates (same as in V method)
+            cos_phi_B = jnp.cos(params_dict['phi_B'])
+            sin_phi_B = jnp.sin(params_dict['phi_B'])
+            baseline_rotated = jnp.array([
+                baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
+                -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
+            ]) if len(baseline_perp) >= 2 else jnp.array([baseline_perp[0], 0.0])
+            
+            # Calculate target coordinates
+            u_freq_meters = baseline_rotated[0] / wavelength / params_dict['distance'] if len(baseline_rotated) > 0 else 0.0
+            v_freq_meters = baseline_rotated[1] / wavelength / params_dict['distance'] if len(baseline_rotated) > 1 else 0.0
+            
+            # Get grid coordinates
+            u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
+            v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
+            
+            # Find closest grid point (same as V method)
+            u_idx = jnp.argmin(jnp.abs(u_coords - u_freq_meters))
+            v_idx = jnp.argmin(jnp.abs(v_coords - v_freq_meters))
+            
+            # Get FFT value at the grid point
+            fft_value = intensity_fft[v_idx, u_idx]
+            
+            return jnp.abs(fft_value)**2
+        
+        # Use JAX to compute the gradient
+        return jax.grad(V_squared_with_params)(params)
+
     def get_params(self) -> dict:
         """
         Get parameters that define the source model.
