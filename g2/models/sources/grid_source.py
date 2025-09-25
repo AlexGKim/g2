@@ -19,7 +19,7 @@ from jax import numpy as jnp
 import jax
 jax.config.update("jax_enable_x64", True)
 
-@partial(jax.custom_jvp,  nondiff_argnums=())
+# @partial(jax.custom_jvp,  nondiff_argnums=())
 def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         """
         Functional computation of FFT for a specific frequency using native spatial gridding.
@@ -60,24 +60,24 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
         
         return intensity_fft
 
-@_compute_map_fft.defjvp
-def _compute_map_fft_jvp(primals, tangents):
-    """Custom JVP rule for J1"""
-    x, = primals
-    dx, = tangents
-    y = _compute_map_fft(x)
+# @_compute_map_fft.defjvp
+# def _compute_map_fft_jvp(primals, tangents):
+#     """Custom JVP rule for J1"""
+#     x, = primals
+#     dx, = tangents
+#     y = _compute_map_fft(x)
     
-    # Also need to wrap jv for the derivative
-    result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
-    jv2 = pure_callback(
-        lambda x: jv(2, np.asarray(x)).astype(x.dtype),
-        result_shape,
-        x,
-        vmap_method='sequential'
-    )
+#     # Also need to wrap jv for the derivative
+#     result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
+#     jv2 = pure_callback(
+#         lambda x: jv(2, np.asarray(x)).astype(x.dtype),
+#         result_shape,
+#         x,
+#         vmap_method='sequential'
+#     )
     
-    dy = y/x - jv2
-    return y, dy * dx
+#     dy = y/x - jv2
+#     return y, dy * dx
 
 # @partial(jit, static_argnums=(0,3,4))
 def _interpolate_fft_result(intensity_fft: jnp.ndarray, u_target: float, 
@@ -456,7 +456,7 @@ class GridSource(source.ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹.
         """
-        return np.interp(nu, self.frequency_grid, self.specific_flux)
+        return jnp.interp(nu, self.frequency_grid, self.specific_flux)
     
     def get_spectrum_info(self):
         """
