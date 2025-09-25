@@ -55,6 +55,15 @@ which has a class method to instantiate a source based on the Sedona model of Ty
    :end-before: # sn2011fe-end
    :language: python
 
+Another example is a Shakura-Sunyaev accretion disk around a supermassive black hole.  The implementation
+is completely untested.
+
+.. literalinclude:: ../examples/examples_source.py
+   :start-after: # shakura-sunyaev-begin
+   :end-before: # shakura-sunyaev-end
+   :language: python
+
+
 Some of the information that can be accessed from a source is demonstrated with the call
 
 .. literalinclude:: ../examples/examples_source.py

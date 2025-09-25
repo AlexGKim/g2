@@ -106,3 +106,10 @@ source.radius = source.pixel_scale() *5  # Set radius to half the grid size
 # sn2011fe-end
 
 summary(source)
+
+# shakura-sunyaev-begin
+from g2.models.sources.agn import  ShakuraSunyaevDisk
+source = ShakuraSunyaevDisk(1e-15, 10, 6, 3, distance=1e25)
+source.radius = 5e-13
+# shakura-sunyaev-end
+summary(source)
