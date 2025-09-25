@@ -20,9 +20,9 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 # @partial(jax.custom_jvp,  nondiff_argnums=())
-def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
+def _compute_map_fft(intensity_map, wavelength_grid) -> np.ndarray:
         """
-        Functional computation of FFT for a specific frequency using native spatial gridding.
+        Functional computation of FFT for a specific frequency using spatial gridding.
         Returns only the FFT intensity result for caching.
         
         Parameters
@@ -31,8 +31,6 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
             2D intensity map in [W m⁻² Hz⁻¹] (units don't matter for visibility)
         wavelength_grid : float
             Wavelength value (kept for compatibility)
-        pixel_scale : float
-            Pixel scale in radians per pixel
             
         Returns
         -------
@@ -79,33 +77,7 @@ def _compute_map_fft(intensity_map, wavelength_grid, pixel_scale) -> np.ndarray:
 #     dy = y/x - jv2
 #     return y, dy * dx
 
-# @partial(jit, static_argnums=(0,3,4))
-def _interpolate_fft_result(intensity_fft: jnp.ndarray, u_target: float, 
-                            v_target: float, u_coords: jnp.ndarray, 
-                            v_coords: jnp.ndarray) -> complex:
-    """
-    Get FFT value at the closest grid point (nearest neighbor).
-    
-    Parameters
-    ----------
-    intensity_fft : jnp.ndarray
-        2D FFT of intensity map
-    u_target, v_target : float
-        Target spatial frequency coordinates
-    u_coords, v_coords : jnp.ndarray
-        Spatial frequency coordinate grids (1D arrays)
-        
-    Returns
-    -------
-    complex
-        FFT value at closest grid point
-    """
-    # Find the closest indices using JAX operations
-    u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
-    v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
-    
-    # Return the FFT value at the closest grid point
-    return intensity_fft[v_idx, u_idx]
+# Removed standalone _interpolate_fft_result function - now a class method
 
 
 
@@ -213,6 +185,10 @@ class GridSource(source.ChaoticSource):
 
         # Initialize functional FFT cache for intensity results only
         self._intensity_fft_cache = {}  # Cache only FFT intensity results by frequency
+        
+        # Note: Frequency coordinates will be computed dynamically based on distance
+        # since they depend on the angular pixel scale (radians per pixel)
+        # which varies with distance parameter
         
         # print(f"Loaded Sedona SN2011fe model:")
         # print(f"  Wavelength range: {np.min(self.wavelength_grid):.1f} - {np.max(self.wavelength_grid):.1f} Å")
@@ -358,6 +334,34 @@ class GridSource(source.ChaoticSource):
                     intensities[i] = 0.0
             return intensities
 
+    def _interpolate_fft_result(self, intensity_fft: jnp.ndarray, u_target: float,
+                               v_target: float) -> complex:
+        """
+        Get FFT value at the closest grid point (nearest neighbor) using Fourier space coordinates.
+        
+        Parameters
+        ----------
+        intensity_fft : jnp.ndarray
+            2D FFT of intensity map computed in spatial gridding fourier space
+        u_target, v_target : float
+            Target spatial frequency coordinates in cycles per meter
+            
+        Returns
+        -------
+        complex
+            FFT value at closest grid point
+        """
+        # Compute Fourier space coordinates for the intensity grid (in cycles per meter)
+        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))  # cycles per meter
+        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))  # cycles per meter
+        
+        # Find the closest indices using JAX operations
+        u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
+        v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
+        
+        # Return the FFT value at the closest grid point
+        return intensity_fft[v_idx, u_idx]
+
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
         Calculate the spatial visibility function V using FFT with caching and interpolation.
@@ -396,10 +400,12 @@ class GridSource(source.ChaoticSource):
         # # Get cached FFT data
         # intensity_fft = self._intensity_fft_cache[freq_idx]
 
-        # always compute FFT functionally to avoid storing large arrays
+        # Calculate pixel scale from distance (angular scale)
+        pixel_scale = self.pixel_scale_m / params['distance']  # radians per pixel
+        
+        # Always compute FFT functionally using spatial gridding
         intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :],
-                                                self.wavelength_grid[freq_idx],
-                                                self.pixel_scale_m/params['distance'])
+                                                self.wavelength_grid[freq_idx])
 
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
@@ -408,19 +414,13 @@ class GridSource(source.ChaoticSource):
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
         
-        # Convert baseline to spatial frequency coordinates
-        u_freq = baseline_perp[0] / wavelength if len(baseline_perp) > 0 else 0.0
-        v_freq = baseline_perp[1] / wavelength if len(baseline_perp) > 1 else 0.0
+        # Convert baseline to spatial frequency coordinates in cycles per meter
+        # The FFT was computed using pixel_scale_m (meters per pixel), so we need cycles per meter
+        u_freq_meters = baseline_perp[0] / wavelength / params['distance'] if len(baseline_perp) > 0 else 0.0
+        v_freq_meters = baseline_perp[1] / wavelength / params['distance'] if len(baseline_perp) > 1 else 0.0
         
-        # Calculate pixel scale from distance
-        pixel_scale = self.pixel_scale_m / params['distance']  # radians per pixel
-        
-        # Compute spatial frequency coordinate grids dynamically
-        u_coords = fftshift(fftfreq(self.nx, d=pixel_scale))  # cycles per radian
-        v_coords = fftshift(fftfreq(self.ny, d=pixel_scale))  # cycles per radian
-        
-        # Get FFT result at the closest spatial frequency coordinates
-        return _interpolate_fft_result(intensity_fft, u_freq, v_freq, u_coords, v_coords)
+        # Use class method to interpolate FFT result
+        return self._interpolate_fft_result(intensity_fft, u_freq_meters, v_freq_meters)
     
 
     
