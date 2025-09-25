@@ -267,9 +267,101 @@ class GridSource(source.ChaoticSource):
                 # Multiple directions and frequencies - not typically used
                 raise NotImplementedError("Multiple frequencies and directions not implemented")
     
+    def _transform_coordinates(self, coords: np.ndarray, params: dict, coord_type: str = 'direction') -> tuple:
+        """
+        Common coordinate transformation for both intensity and visibility calculations.
+        
+        Parameters
+        ----------
+        coords : ndarray
+            Input coordinates (direction vectors for intensity, baseline for visibility)
+        params : dict
+            Source parameters including distance and phi_B
+        coord_type : str
+            Either 'direction' (for intensity) or 'baseline' (for visibility)
+            
+        Returns
+        -------
+        tuple
+            (u_target, v_target) coordinates in the appropriate space
+        """
+        if coord_type == 'direction':
+            # For intensity: convert direction to pixel coordinates
+            pixel_scale = self.pixel_scale_m / params['distance']
+            cos_phi_B = jnp.cos(params['phi_B'])
+            sin_phi_B = jnp.sin(params['phi_B'])
+            
+            # Apply rotation and convert to pixel coordinates
+            x_pixel = (coords[0] * cos_phi_B + coords[1] * sin_phi_B) / pixel_scale + self.nx // 2
+            y_pixel = (-coords[0] * sin_phi_B + coords[1] * cos_phi_B) / pixel_scale + self.ny // 2
+            
+            return x_pixel, y_pixel
+            
+        elif coord_type == 'baseline':
+            # For visibility: convert baseline to spatial frequency coordinates
+            c = 2.99792458e8
+            nu_0 = 5e14  # This should be passed as parameter, but for now use default
+            wavelength = c / nu_0
+            
+            # Apply phi_B rotation to baseline
+            cos_phi_B = jnp.cos(params['phi_B'])
+            sin_phi_B = jnp.sin(params['phi_B'])
+            baseline_rotated = jnp.array([
+                coords[0] * cos_phi_B + coords[1] * sin_phi_B,
+                -coords[0] * sin_phi_B + coords[1] * cos_phi_B
+            ])
+            
+            # Convert to spatial frequency coordinates in cycles per meter
+            u_freq_meters = baseline_rotated[0] / wavelength / params['distance']
+            v_freq_meters = baseline_rotated[1] / wavelength / params['distance']
+            
+            return u_freq_meters, v_freq_meters
+        else:
+            raise ValueError(f"Unknown coord_type: {coord_type}")
+
+    def _interpolate_grid(self, grid_data: jnp.ndarray, u_target: float, v_target: float,
+                         coord_type: str = 'pixel') -> Union[float, complex]:
+        """
+        Common grid interpolation for both intensity and FFT data.
+        
+        Parameters
+        ----------
+        grid_data : jnp.ndarray
+            2D grid data to interpolate from
+        u_target, v_target : float
+            Target coordinates
+        coord_type : str
+            Either 'pixel' (for intensity) or 'fft' (for visibility FFT)
+            
+        Returns
+        -------
+        Union[float, complex]
+            Interpolated value
+        """
+        if coord_type == 'pixel':
+            # For intensity: use pixel coordinates directly
+            if (0 <= u_target < self.nx and 0 <= v_target < self.ny):
+                x0, x1 = int(u_target), min(int(u_target) + 1, self.nx - 1)
+                y0, y1 = int(v_target), min(int(v_target) + 1, self.ny - 1)
+                return grid_data[y0, x0]
+            else:
+                return 0.0
+                
+        elif coord_type == 'fft':
+            # For FFT: find closest grid point in spatial frequency space
+            u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
+            v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
+            
+            u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
+            v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
+            
+            return grid_data[v_idx, u_idx]
+        else:
+            raise ValueError(f"Unknown coord_type: {coord_type}")
+
     def _interpolate_intensity(self, intensity_map_si: np.ndarray, n_hat: np.ndarray, pixel_scale: float) -> Union[float, np.ndarray]:
         """
-        Helper method to interpolate intensity from the 2D map
+        Helper method to interpolate intensity from the 2D map using common coordinate transformation.
         
         Parameters
         ----------
@@ -285,82 +377,56 @@ class GridSource(source.ChaoticSource):
         intensity : float or ndarray
             Interpolated intensity value(s)
         """
+        # Use common transformation with pixel_scale embedded in params
+        params = {'distance': self.pixel_scale_m / pixel_scale, 'phi_B': self.phi_B}
+        
         if np.ndim(n_hat) == 1:
-
             # Single direction vector
-            x_pixel = (n_hat[0]* self.cos_phi_B + n_hat[1] * self.sin_phi_B) / pixel_scale + self.nx // 2
-            y_pixel = (-n_hat[0]* self.sin_phi_B + n_hat[1] * self.cos_phi_B) / pixel_scale + self.ny // 2
-            
-            # Check if within bounds
-            if (0 <= x_pixel < self.nx and 0 <= y_pixel < self.ny):
-                # Bilinear interpolation
-                x0, x1 = int(x_pixel), min(int(x_pixel) + 1, self.nx - 1)
-                y0, y1 = int(y_pixel), min(int(y_pixel) + 1, self.ny - 1)
-                
-                intensity = intensity_map_si[y0, x0] 
-
-                # if interpolated
-                # fx = x_pixel - int(x_pixel)
-                # fy = y_pixel - int(y_pixel)
-                       
-                # intensity = (intensity_map_si[y0, x0] * (1 - fx) * (1 - fy) +
-                #            intensity_map_si[y0, x1] * fx * (1 - fy) +
-                #            intensity_map_si[y1, x0] * (1 - fx) * fy +
-                #            intensity_map_si[y1, x1] * fx * fy)
-                return intensity
-            else:
-                return 0.0
+            x_pixel, y_pixel = self._transform_coordinates(n_hat, params, 'direction')
+            return self._interpolate_grid(intensity_map_si, x_pixel, y_pixel, 'pixel')
         else:
             # Multiple direction vectors
             intensities = np.zeros(n_hat.shape[0])
             for i, direction in enumerate(n_hat):
-                x_pixel = direction[0] / pixel_scale + self.nx // 2
-                y_pixel = direction[1] / pixel_scale + self.ny // 2
-                
-                if (0 <= x_pixel < self.nx and 0 <= y_pixel < self.ny):
-                    x0, x1 = int(x_pixel), min(int(x_pixel) + 1, self.nx - 1)
-                    y0, y1 = int(y_pixel), min(int(y_pixel) + 1, self.ny - 1)
-
-                    intensities[i] = intensity_map_si[y0, x0]
-                    
-                    # fx = x_pixel - int(x_pixel)
-                    # fy = y_pixel - int(y_pixel)
-                    
-                    # intensities[i] = (intensity_map_si[y0, x0] * (1 - fx) * (1 - fy) +
-                    #                 intensity_map_si[y0, x1] * fx * (1 - fy) +
-                    #                 intensity_map_si[y1, x0] * (1 - fx) * fy +
-                    #                 intensity_map_si[y1, x1] * fx * fy)
-                else:
-                    intensities[i] = 0.0
+                x_pixel, y_pixel = self._transform_coordinates(direction, params, 'direction')
+                intensities[i] = self._interpolate_grid(intensity_map_si, x_pixel, y_pixel, 'pixel')
             return intensities
 
-    def _interpolate_fft_result(self, intensity_fft: jnp.ndarray, u_target: float,
-                               v_target: float) -> complex:
+    def _transform_coordinates_for_visibility(self, baseline_perp: np.ndarray, params: dict, nu_0: float) -> tuple:
         """
-        Get FFT value at the closest grid point (nearest neighbor) using Fourier space coordinates.
+        Transform baseline coordinates to spatial frequency coordinates for visibility calculation.
         
         Parameters
         ----------
-        intensity_fft : jnp.ndarray
-            2D FFT of intensity map computed in spatial gridding fourier space
-        u_target, v_target : float
-            Target spatial frequency coordinates in cycles per meter
+        baseline_perp : ndarray
+            Perpendicular baseline components [Bx, By]
+        params : dict
+            Source parameters including distance and phi_B
+        nu_0 : float
+            Central frequency in Hz
             
         Returns
         -------
-        complex
-            FFT value at closest grid point
+        tuple
+            (u_freq_meters, v_freq_meters) in cycles per meter
         """
-        # Compute Fourier space coordinates for the intensity grid (in cycles per meter)
-        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))  # cycles per meter
-        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))  # cycles per meter
+        # Physical constants
+        c = 2.99792458e8
+        wavelength = c / nu_0
         
-        # Find the closest indices using JAX operations
-        u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
-        v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
+        # Apply phi_B rotation to baseline
+        cos_phi_B = jnp.cos(params['phi_B'])
+        sin_phi_B = jnp.sin(params['phi_B'])
+        baseline_rotated = jnp.array([
+            baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
+            -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
+        ]) if len(baseline_perp) >= 2 else jnp.array([baseline_perp[0], 0.0])
         
-        # Return the FFT value at the closest grid point
-        return intensity_fft[v_idx, u_idx]
+        # Convert to spatial frequency coordinates in cycles per meter
+        u_freq_meters = baseline_rotated[0] / wavelength / params['distance'] if len(baseline_rotated) > 0 else 0.0
+        v_freq_meters = baseline_rotated[1] / wavelength / params['distance'] if len(baseline_rotated) > 1 else 0.0
+        
+        return u_freq_meters, v_freq_meters
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
@@ -414,21 +480,12 @@ class GridSource(source.ChaoticSource):
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
         
-        # Apply phi_B rotation to baseline coordinates using params (not class attributes)
-        cos_phi_B = jnp.cos(params['phi_B'])
-        sin_phi_B = jnp.sin(params['phi_B'])
-        baseline_rotated = jnp.array([
-            baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
-            -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
-        ]) if len(baseline_perp) >= 2 else jnp.array([baseline_perp[0], 0.0])
+        # Use common coordinate transformation for visibility
+        u_freq_meters, v_freq_meters = self._transform_coordinates_for_visibility(
+            baseline_perp, params, nu_0)
         
-        # Convert baseline to spatial frequency coordinates in cycles per meter
-        # The FFT was computed using pixel_scale_m (meters per pixel), so we need cycles per meter
-        u_freq_meters = baseline_rotated[0] / wavelength / params['distance'] if len(baseline_rotated) > 0 else 0.0
-        v_freq_meters = baseline_rotated[1] / wavelength / params['distance'] if len(baseline_rotated) > 1 else 0.0
-        
-        # Use class method to interpolate FFT result
-        return self._interpolate_fft_result(intensity_fft, u_freq_meters, v_freq_meters)
+        # Use common interpolation method
+        return self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
     
 
     
@@ -483,28 +540,12 @@ class GridSource(source.ChaoticSource):
             # Compute FFT of the scaled intensity
             intensity_fft = _compute_map_fft(scaled_intensity, self.wavelength_grid[freq_idx])
             
-            # Apply phi_B rotation to baseline coordinates (same as in V method)
-            cos_phi_B = jnp.cos(params_dict['phi_B'])
-            sin_phi_B = jnp.sin(params_dict['phi_B'])
-            baseline_rotated = jnp.array([
-                baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
-                -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
-            ]) if len(baseline_perp) >= 2 else jnp.array([baseline_perp[0], 0.0])
+            # Use common coordinate transformation (same as V method)
+            u_freq_meters, v_freq_meters = self._transform_coordinates_for_visibility(
+                baseline_perp, params_dict, nu_0)
             
-            # Calculate target coordinates
-            u_freq_meters = baseline_rotated[0] / wavelength / params_dict['distance'] if len(baseline_rotated) > 0 else 0.0
-            v_freq_meters = baseline_rotated[1] / wavelength / params_dict['distance'] if len(baseline_rotated) > 1 else 0.0
-            
-            # Get grid coordinates
-            u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
-            v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
-            
-            # Find closest grid point (same as V method)
-            u_idx = jnp.argmin(jnp.abs(u_coords - u_freq_meters))
-            v_idx = jnp.argmin(jnp.abs(v_coords - v_freq_meters))
-            
-            # Get FFT value at the grid point
-            fft_value = intensity_fft[v_idx, u_idx]
+            # Use common interpolation method (same as V method)
+            fft_value = self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
             
             return jnp.abs(fft_value)**2
         
