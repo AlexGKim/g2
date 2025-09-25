@@ -16,7 +16,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 
-def _compute_map_fft(intensity_map, wavelength_grid) -> jnp.ndarray:
+def _compute_map_fft(intensity_map) -> jnp.ndarray:
     """
     Compute 2D FFT of intensity map for visibility calculation.
     
@@ -78,20 +78,16 @@ class GridSource(source.ChaoticSource):
         self.flux_grid = flux_grid  # [erg/s/Å]
         
         # Convert flux_grid from [erg/s/Å] to [W Hz⁻¹]
-        self.flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10)
+        flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10)
         
         # Convert to intensity [W m⁻² Hz⁻¹ sr⁻¹]
-        self.intensity_data = jnp.array(self.flux_grid_mks / (4 * np.pi * pixel_scale_m**2))
+        self.intensity_data = jnp.array(flux_grid_mks / (4 * np.pi * pixel_scale_m**2))
 
         # Calculate total flux spectrum
         self.specific_flux = np.sum(self.intensity_data, axis=(1, 2))  # [W m⁻² Hz⁻¹]
 
         # Physical constants for unit conversion
         wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
-        
-        # Convert units: [erg/s/cm²/Å] → [W m⁻² Hz⁻¹]
-        conversion_factor = 1e-7 * 1e4 * 1e-10 * (wavelength_m[:, None, None]**2) / c
-        self.intensity_space = jnp.array(self.flux_grid * conversion_factor)  # [W m⁻² Hz⁻¹]
 
         # Store parameters
         self.B = B
@@ -99,7 +95,7 @@ class GridSource(source.ChaoticSource):
         self.phi_B = phi_B
         
         # Get spatial dimensions
-        self.n_wavelengths, self.nx, self.ny = self.intensity_space.shape
+        self.n_wavelengths, self.nx, self.ny = self.intensity_data.shape
         
         # Validate input dimensions
         if len(self.wavelength_grid) != self.n_wavelengths:
@@ -187,7 +183,7 @@ class GridSource(source.ChaoticSource):
                 # Multiple directions and frequencies - not typically used
                 raise NotImplementedError("Multiple frequencies and directions not implemented")
     
-    def _transform_coordinates(self, coords: np.ndarray, params: dict, coord_type: str = 'direction') -> tuple:
+    def _transform_coordinates(self, coords: np.ndarray, params: dict, coord_type: str = 'direction', nu_0: float = None) -> tuple:
         """
         Common coordinate transformation for both intensity and visibility calculations.
         
@@ -199,6 +195,8 @@ class GridSource(source.ChaoticSource):
             Source parameters including distance and phi_B
         coord_type : str
             Either 'direction' (for intensity) or 'baseline' (for visibility)
+        nu_0 : float, optional
+            Central frequency in Hz (required for baseline transformations)
             
         Returns
         -------
@@ -219,8 +217,10 @@ class GridSource(source.ChaoticSource):
             
         elif coord_type == 'baseline':
             # For visibility: convert baseline to spatial frequency coordinates
+            if nu_0 is None:
+                raise ValueError("nu_0 frequency parameter is required for baseline transformations")
+                
             c = 2.99792458e8
-            nu_0 = 5e14  # This should be passed as parameter, but for now use default
             wavelength = c / nu_0
             
             # Apply phi_B rotation to baseline
@@ -280,41 +280,6 @@ class GridSource(source.ChaoticSource):
             raise ValueError(f"Unknown coord_type: {coord_type}")
 
 
-    def _transform_coordinates_for_visibility(self, baseline_perp: np.ndarray, params: dict, nu_0: float) -> tuple:
-        """
-        Transform baseline coordinates to spatial frequency coordinates for visibility calculation.
-        
-        Parameters
-        ----------
-        baseline_perp : ndarray
-            Perpendicular baseline components [Bx, By]
-        params : dict
-            Source parameters including distance and phi_B
-        nu_0 : float
-            Central frequency in Hz
-            
-        Returns
-        -------
-        tuple
-            (u_freq_meters, v_freq_meters) in cycles per meter
-        """
-        # Physical constants
-        c = 2.99792458e8
-        wavelength = c / nu_0
-        
-        # Apply phi_B rotation to baseline
-        cos_phi_B = jnp.cos(params['phi_B'])
-        sin_phi_B = jnp.sin(params['phi_B'])
-        baseline_rotated = jnp.array([
-            baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
-            -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
-        ]) if len(baseline_perp) >= 2 else jnp.array([baseline_perp[0], 0.0])
-        
-        # Convert to spatial frequency coordinates in cycles per meter
-        u_freq_meters = baseline_rotated[0] / wavelength / params['distance'] if len(baseline_rotated) > 0 else 0.0
-        v_freq_meters = baseline_rotated[1] / wavelength / params['distance'] if len(baseline_rotated) > 1 else 0.0
-        
-        return u_freq_meters, v_freq_meters
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
@@ -341,15 +306,14 @@ class GridSource(source.ChaoticSource):
         freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
         # Always compute FFT functionally using spatial gridding
-        intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :],
-                                        self.wavelength_grid[freq_idx])
+        intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :])
 
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
         
         # Use common coordinate transformation for visibility
-        u_freq_meters, v_freq_meters = self._transform_coordinates_for_visibility(
-            baseline_perp, params, nu_0)
+        u_freq_meters, v_freq_meters = self._transform_coordinates(
+            baseline_perp, params, 'baseline', nu_0)
         
         # Use common interpolation method
         return self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
@@ -395,11 +359,11 @@ class GridSource(source.ChaoticSource):
             scaled_intensity = scaled_intensity * B_scale
             
             # Compute FFT of the scaled intensity
-            intensity_fft = _compute_map_fft(scaled_intensity, self.wavelength_grid[freq_idx])
+            intensity_fft = _compute_map_fft(scaled_intensity)
             
             # Use common coordinate transformation
-            u_freq_meters, v_freq_meters = self._transform_coordinates_for_visibility(
-                baseline_perp, params_dict, nu_0)
+            u_freq_meters, v_freq_meters = self._transform_coordinates(
+                baseline_perp, params_dict, 'baseline', nu_0)
             
             # Use common interpolation method
             fft_value = self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
@@ -496,8 +460,11 @@ class GridSource(source.ChaoticSource):
 
     @staticmethod
     def create_grid_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
-                                   flux_file: str = "../data/Phase0Flux.npy",
-                                   B: float = 9.98, distance: float = 204379200000000.0) -> "GridSource":
+                                flux_file: str = "../data/Phase0Flux.npy",
+                                pixel_scale_m: float = None,
+                                B: float = 9.98, 
+                                distance: float = 204379200000000.0,
+                                phi_B: float = 0.0) -> "GridSource":
         """
         Convenience factory function to create GridSource from data files.
         
@@ -507,10 +474,14 @@ class GridSource(source.ChaoticSource):
             Path to WaveGrid.npy file containing wavelength grid [Angstrom]
         flux_file : str
             Path to Phase0Flux.npy file containing 3D flux data [erg/s/cm²/Å]
+        pixel_scale_m : float, optional
+            Pixel scale in meters per pixel. If None, defaults to SN2011fe scale
         B : float
             Magnitude for flux normalization
         distance : float
             Distance to source in meters
+        phi_B : float
+            Baseline orientation angle in radians
             
         Returns
         -------
@@ -528,11 +499,16 @@ class GridSource(source.ChaoticSource):
         # Check for monotonically increasing values
         if not np.all(np.diff(wavelength_grid) > 0):
             raise ValueError("Wavelength grid is not monotonically increasing")
-    
-        return GridSource(wavelength_grid, flux_grid, B, distance)
-    
+        
+        # Default pixel scale for SN2011fe if not provided
+        if pixel_scale_m is None:
+            pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
+
+        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B, distance=distance, phi_B=phi_B)
+
     @staticmethod
-    def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
+    def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0,
+                                phi_B: float = 0.0):
         """
         Create a GridSource instance for SN2011fe using default data files.
         
@@ -550,14 +526,20 @@ class GridSource(source.ChaoticSource):
         """
         # Get the current file's directory
         current_dir = Path(__file__).parent
-
+        
         # Use real Sedona data
-        real_wave_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
-        real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
-
-        wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
-        flux_grid = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
-
+        wave_grid_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
+        flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
+        
+        # SN2011fe specific pixel scale
         pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
-
-        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B, distance=distance)
+        
+        # Call the general factory method
+        return GridSource.create_grid_source_from_files(
+            wave_grid_file=wave_grid_file,
+            flux_file=flux_file,
+            pixel_scale_m=pixel_scale_m,
+            B=B,
+            distance=distance,
+            phi_B=phi_B
+        )
