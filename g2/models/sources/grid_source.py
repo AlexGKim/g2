@@ -5,144 +5,98 @@ Source Model for a spatial grid of the intensity profile
 
 import numpy as np
 from typing import Union
-import sys
 import os
 from pathlib import Path
 
 from ..base import source
-from scipy.interpolate import interp1d
 from jax.numpy.fft import fftshift, fftfreq
-
-from functools import partial
-from jax import jit
 from jax import numpy as jnp
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-# @partial(jax.custom_jvp,  nondiff_argnums=())
-def _compute_map_fft(intensity_map, wavelength_grid) -> np.ndarray:
-        """
-        Functional computation of FFT for a specific frequency using spatial gridding.
-        Returns only the FFT intensity result for caching.
-        
-        Parameters
-        ----------
-        intensity_map : jnp.ndarray
-            2D intensity map in [W m⁻² Hz⁻¹] (units don't matter for visibility)
-        wavelength_grid : float
-            Wavelength value (kept for compatibility)
-            
-        Returns
-        -------
-        np.ndarray
-            2D FFT of intensity map, properly normalized
-        """
-        from jax.numpy.fft import fft2, fftshift
-        
-        # For visibility calculation, units don't matter since it's a normalized quantity
-        # Just use the intensity_map directly and apply the same logic as before
-        # pixel_solid_angle = pixel_scale**2  # steradians per pixel
 
-        total_flux = jnp.sum(intensity_map)
-
-        # Compute 2D FFT with proper shifting
-        intensity_fft = fft2(intensity_map/total_flux)
-        intensity_fft = fftshift(intensity_fft)
-        
-        # Calculate total flux for normalization
-        # total_flux = jnp.sum(intensity_map)
-        
-        # Proper normalization: visibility should be normalized by total flux
-        # so that V(0) = 1 (zero baseline gives unity visibility)
-        # intensity_fft /= total_flux
-        
-        return intensity_fft
-
-# @_compute_map_fft.defjvp
-# def _compute_map_fft_jvp(primals, tangents):
-#     """Custom JVP rule for J1"""
-#     x, = primals
-#     dx, = tangents
-#     y = _compute_map_fft(x)
+def _compute_map_fft(intensity_map, wavelength_grid) -> jnp.ndarray:
+    """
+    Compute 2D FFT of intensity map for visibility calculation.
     
-#     # Also need to wrap jv for the derivative
-#     result_shape = jax.ShapeDtypeStruct(x.shape, x.dtype)
-#     jv2 = pure_callback(
-#         lambda x: jv(2, np.asarray(x)).astype(x.dtype),
-#         result_shape,
-#         x,
-#         vmap_method='sequential'
-#     )
+    Parameters
+    ----------
+    intensity_map : jnp.ndarray
+        2D intensity map in [W m⁻² Hz⁻¹]
+    wavelength_grid : float
+        Wavelength value (unused, kept for compatibility)
+        
+    Returns
+    -------
+    jnp.ndarray
+        2D FFT of intensity map, normalized by total flux
+    """
+    from jax.numpy.fft import fft2, fftshift
     
-#     dy = y/x - jv2
-#     return y, dy * dx
-
-# Removed standalone _interpolate_fft_result function - now a class method
-
+    total_flux = jnp.sum(intensity_map)
+    intensity_fft = fft2(intensity_map / total_flux)
+    intensity_fft = fftshift(intensity_fft)
+    
+    return intensity_fft
 
 
 class GridSource(source.ChaoticSource):
     """
-    Sedona model source for SN2011fe using numpy data files with FFT-based visibility calculation
+    Spatially extended source model using Sedona simulation data.
     
     This class implements a spatially extended source model using Sedona simulation data
-    with efficient FFT-based visibility calculations and caching.
+    with efficient FFT-based visibility calculations.
     """
     
     def __init__(self, wavelength_grid: np.ndarray, flux_grid: np.ndarray, pixel_scale_m: float,
                  B: float = 9.98, distance: float = 204379200000000.0, phi_B: float = 0.0):
         """
-        Initialize Sedona SN2011fe source with wavelength and flux grids as parameters
+        Initialize GridSource with wavelength and flux grids.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         wavelength_grid : np.ndarray
             Wavelength grid in Angstrom, shape (n_wavelengths,)
         flux_grid : np.ndarray
             3D flux data in [erg/s/Å], shape (n_wavelengths, nx, ny)
         pixel_scale_m : float
-            Pixel scale in m per pixel
+            Pixel scale in meters per pixel
         B : float
             Magnitude for flux normalization
         distance : float
             Distance to source in meters
+        phi_B : float
+            Baseline orientation angle in radians
         """
         c = 2.99792458e8  # m/s
 
-        # Store input grids directly as class parameters
+        # Store input grids
         self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
         self.frequency_grid = c / (wavelength_grid * 1e-10)  # [Hz]
-        self.pixel_scale_m = pixel_scale_m  # radians per pixel
-
-        self.flux_grid = flux_grid  # [erg/s/Å] - 3D array
+        self.pixel_scale_m = pixel_scale_m
+        self.flux_grid = flux_grid  # [erg/s/Å]
         
-        # Convert flux_grid from [erg/s/Å] to [W Hz⁻¹] during initialization
-        self.flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10) #Convert to [W/m²/Å] for internal use if needed
+        # Convert flux_grid from [erg/s/Å] to [W Hz⁻¹]
+        self.flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10)
         
-        # Convert from [W Hz^-1] to [W Hz^-1 m^-2 sr^-1] assuming isotropic emission
-        self.intensity_data = jnp.array(self.flux_grid_mks / (4 * np.pi * pixel_scale_m**2))  # [W/m²/Hz] assuming isotropic emission
+        # Convert to intensity [W m⁻² Hz⁻¹ sr⁻¹]
+        self.intensity_data = jnp.array(self.flux_grid_mks / (4 * np.pi * pixel_scale_m**2))
 
-        # Calculate total flux spectrum by integrating over spatial dimensions
-        # intensity_space is already in [W m⁻² Hz⁻¹], so sum gives total flux
+        # Calculate total flux spectrum
         self.specific_flux = np.sum(self.intensity_data, axis=(1, 2))  # [W m⁻² Hz⁻¹]
 
         # Physical constants for unit conversion
         wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
         
         # Convert units: [erg/s/cm²/Å] → [W m⁻² Hz⁻¹]
-        # 1e-7: erg → J, 1e4: cm² → m², 1e-10: Å → m, (λ²/c): λ → ν
         conversion_factor = 1e-7 * 1e4 * 1e-10 * (wavelength_m[:, None, None]**2) / c
-        self.intensity_space = jnp.array(self.flux_grid * conversion_factor)  # [W m⁻² Hz⁻¹] - 3D array
-        
+        self.intensity_space = jnp.array(self.flux_grid * conversion_factor)  # [W m⁻² Hz⁻¹]
 
         # Store parameters
         self.B = B
         self.distance = distance
-        self.phi_B = phi_B  # Position angle for baseline orientation (not used here
-
-        # Precompute trigonometric values for baseline rotation
-        self.cos_phi_B = jnp.cos(phi_B)
-        self.sin_phi_B = jnp.sin(phi_B)
+        self.phi_B = phi_B
         
         # Get spatial dimensions
         self.n_wavelengths, self.nx, self.ny = self.intensity_space.shape
@@ -151,21 +105,10 @@ class GridSource(source.ChaoticSource):
         if len(self.wavelength_grid) != self.n_wavelengths:
             raise ValueError(f"Wavelength grid length {len(self.wavelength_grid)} doesn't match flux grid wavelength dimension {self.n_wavelengths}")
         
-        # normalize flux scale
-        # flux_int = self.flux_data_3d.sum(axis=(1,2))
-        # spectrum = sncosmo.Spectrum(self.wavelength_grid, flux_int)
-        # spectrum_mag = spectrum.bandmag('bessellb', magsys='vega')
-        # self.flux_data_3d = self.flux_data_3d * 10**((spectrum_mag-B)/2.5) # now in units of  (erg / s / cm^2 / A) for B=12 mag
-        
-        # Convert wavelength to frequency (reuse wavelength_m from above)
-        # self.frequency_grid = c / wavelength_m  # [Hz]
-                
         # Keep old total_flux_spectrum for backward compatibility in plotting
-        # Convert back to [erg/s/cm²/Å] for plotting method
         self.total_flux_spectrum = self.specific_flux * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
-        # Convert from flux density [W m⁻² Hz⁻¹] to photon flux [photons/s/m²/Hz]
         h = 6.62607015e-34  # Planck constant
         self.specific_photon_flux = self.specific_flux / (h * self.frequency_grid)  # [photons/s/m²/Hz]
         
@@ -182,58 +125,34 @@ class GridSource(source.ChaoticSource):
         # Store frequency range for reference
         self.freq_min = np.min(freq_unique)
         self.freq_max = np.max(freq_unique)
-
-        # Initialize functional FFT cache for intensity results only
-        self._intensity_fft_cache = {}  # Cache only FFT intensity results by frequency
-        
-        # Note: Frequency coordinates will be computed dynamically based on distance
-        # since they depend on the angular pixel scale (radians per pixel)
-        # which varies with distance parameter
-        
-        # print(f"Loaded Sedona SN2011fe model:")
-        # print(f"  Wavelength range: {np.min(self.wavelength_grid):.1f} - {np.max(self.wavelength_grid):.1f} Å")
-        # print(f"  Frequency range: {self.freq_min:.2e} - {self.freq_max:.2e} Hz")
-        # print(f"  Peak flux density: {np.max(self.flux_density_grid):.2e} W/m²/Hz")
-        # print(f"  Spatial grid: {self.nx} × {self.ny}")
-        # print(f"  Wavelength points: {self.n_wavelengths}")
     
     def pixel_scale(self) -> float:
-
         """
-        Get pixel scale in radians per pixel
+        Get pixel scale in radians per pixel.
         
         Returns
         -------
         float
             Pixel scale in radians per pixel
         """
-        return self.pixel_scale_m / self.distance  # radians per pixel
+        return self.pixel_scale_m / self.distance
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, params=None) -> Union[float, np.ndarray]:
         """
-        Calculate specific intensity I_nu(nu, n_hat)
-        
-        For SN2011fe, we use the 3D Sedona data to get spatially resolved intensity.
-        This method is compatible with the updated AbstractSource interface.
+        Calculate specific intensity I_nu(nu, n_hat).
         
         Parameters
         ----------
         nu : float or array_like
-            Frequency in Hz. Can be a single value or array of frequencies.
+            Frequency in Hz
         n_hat : array_like, shape (2,) or (N, 2)
-            Direction vector(s) on sky in radians. For a single direction,
-            should be [theta_x, theta_y]. For multiple directions, should be
-            an array where each row is a direction vector.
+            Direction vector(s) on sky in radians
             
         Returns
         -------
         intensity : float or array_like
-            Specific intensity in W m⁻² Hz⁻¹ sr⁻¹. Shape matches input:
-            - If nu is scalar and n_hat is (2,): returns scalar
-            - If nu is array and n_hat is (2,): returns array matching nu
-            - If nu is scalar and n_hat is (N,2): returns array of length N
+            Specific intensity in W m⁻² Hz⁻¹ sr⁻¹
         """
-
         if params is None:
             params = self.get_params()
         
@@ -241,17 +160,7 @@ class GridSource(source.ChaoticSource):
         if jnp.isscalar(nu):
             # Single frequency
             freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
-
-            # Convert to intensity per steradian using pixel solid angle
             pixel_scale = self.pixel_scale_m/params['distance']  # radians per pixel
-            # pixel_solid_angle = pixel_scale**2  # steradians per pixel
-
-            # # Get the 2D intensity map at this frequency
-            # intensity_map = (self.flux_grid_mks[freq_idx, :, :] 
-            #                  / (4 * np.pi * params['distance']**2) / pixel_solid_angle ) # [W m⁻² Hz⁻¹]
-            
-
-            # intensity_map_si = intensity_map / pixel_solid_angle  # [W m⁻² Hz⁻¹ sr⁻¹]
             
             return self._interpolate_intensity(self.intensity_data[freq_idx,:,:], n_hat, pixel_scale)
         else:
@@ -361,7 +270,7 @@ class GridSource(source.ChaoticSource):
 
     def _interpolate_intensity(self, intensity_map_si: np.ndarray, n_hat: np.ndarray, pixel_scale: float) -> Union[float, np.ndarray]:
         """
-        Helper method to interpolate intensity from the 2D map using common coordinate transformation.
+        Helper method to interpolate intensity from the 2D map.
         
         Parameters
         ----------
@@ -430,53 +339,32 @@ class GridSource(source.ChaoticSource):
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
-        Calculate the spatial visibility function V using FFT with caching and interpolation.
-        
-        Uses the native spatial gridding of the flux_grid for FFT calculation,
-        caches the result, and interpolates for specific baselines.
+        Calculate the spatial visibility function V using FFT.
         
         Parameters
         ----------
         nu_0 : float
-            Central frequency in Hz. Determines the wavelength λ₀ = c/ν₀.
+            Central frequency in Hz
         baseline : array_like, shape (3,)
-            Baseline vector in meters [Bx, By, Bz]. Only the perpendicular
-            components (Bx, By) are used in the calculation.
+            Baseline vector in meters [Bx, By, Bz]
         params : dict, optional
-            Additional parameters. Should contain 'distance' key for pixel scale calculation.
-            If not provided, uses self.distance.
+            Additional parameters. If not provided, uses self.get_params()
             
         Returns
         -------
         V : complex
-            Normalized fringe visibility. The magnitude gives the visibility
-            amplitude, and the phase gives the visibility phase.
+            Normalized fringe visibility
         """
-
         if params is None:
             params = self.get_params()
         
         # Find the closest frequency index
         freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
-        # # Check if FFT is already cached for this frequency
-        # if freq_idx not in self._intensity_fft_cache:
-        #     self._intensity_fft_cache[freq_idx] = self._compute_intensity_fft(freq_idx)
-        
-        # # Get cached FFT data
-        # intensity_fft = self._intensity_fft_cache[freq_idx]
-
-        # Calculate pixel scale from distance (angular scale)
-        pixel_scale = self.pixel_scale_m / params['distance']  # radians per pixel
-        
         # Always compute FFT functionally using spatial gridding
         intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :],
-                                                self.wavelength_grid[freq_idx])
+                                        self.wavelength_grid[freq_idx])
 
-        # Physical constants
-        c = 2.99792458e8  # Speed of light in m/s
-        wavelength = c / nu_0
-        
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
         
@@ -487,39 +375,30 @@ class GridSource(source.ChaoticSource):
         # Use common interpolation method
         return self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
     
-
-    
     def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
         """
         Calculate the Jacobian of |V|² with respect to source parameters.
         
-        This method uses JAX's automatic differentiation on the FFT computation,
-        making the intensity data depend on the parameters through scaling.
-        
         Parameters
         ----------
         nu_0 : float
-            Central frequency in Hz.
+            Central frequency in Hz
         baseline : array_like, shape (3,)
-            Baseline vector in meters [Bx, By, Bz].
+            Baseline vector in meters [Bx, By, Bz]
         params : dict, optional
-            Source parameters. If None, uses current source parameters.
+            Source parameters. If None, uses current source parameters
             
         Returns
         -------
         jacobian : dict
             Dictionary with same keys as params, containing the partial
-            derivatives of |V|² with respect to each parameter.
+            derivatives of |V|² with respect to each parameter
         """
         if params is None:
             params = self.get_params()
         
-        # Find the frequency index (use the same non-differentiable operation as V)
+        # Find the frequency index
         freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
-        
-        # Physical constants
-        c = 2.99792458e8  # Speed of light in m/s
-        wavelength = c / nu_0
         
         # Extract perpendicular baseline components
         baseline_perp = baseline[:2]
@@ -527,7 +406,6 @@ class GridSource(source.ChaoticSource):
         # Define a function that computes |V|² with parameter dependence
         def V_squared_with_params(params_dict):
             # Make intensity data depend on parameters
-            # Distance affects the angular scale, which we can model as a scaling of the intensity
             distance_scale = params_dict['distance'] / self.distance  # Relative distance change
             
             # Scale the intensity data based on distance (inverse square law for flux)
@@ -540,11 +418,11 @@ class GridSource(source.ChaoticSource):
             # Compute FFT of the scaled intensity
             intensity_fft = _compute_map_fft(scaled_intensity, self.wavelength_grid[freq_idx])
             
-            # Use common coordinate transformation (same as V method)
+            # Use common coordinate transformation
             u_freq_meters, v_freq_meters = self._transform_coordinates_for_visibility(
                 baseline_perp, params_dict, nu_0)
             
-            # Use common interpolation method (same as V method)
+            # Use common interpolation method
             fft_value = self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
             
             return jnp.abs(fft_value)**2
@@ -571,28 +449,26 @@ class GridSource(source.ChaoticSource):
         """
         Calculate total flux F_nu = ∫ I_nu d²n̂.
         
-        Uses the pre-calculated total flux spectrum from intensity_space,
-        compatible with the updated AbstractSource interface.
-        
         Parameters
         ----------
         nu : float
-            Frequency in Hz.
+            Frequency in Hz
             
         Returns
         -------
         flux : float
-            Total flux density in W m⁻² Hz⁻¹.
+            Total flux density in W m⁻² Hz⁻¹
         """
         return jnp.interp(nu, self.frequency_grid, self.specific_flux)
     
     def get_spectrum_info(self):
         """
-        Get information about the loaded spectrum
+        Get information about the loaded spectrum.
         
-        Returns:
-        --------
-        dict : Dictionary with spectrum information
+        Returns
+        -------
+        dict
+            Dictionary with spectrum information
         """
         return {
             'wavelength_range_angstrom': (np.min(self.wavelength_grid), np.max(self.wavelength_grid)),
@@ -605,10 +481,10 @@ class GridSource(source.ChaoticSource):
     
     def plot_spectrum(self, wavelength_units='angstrom'):
         """
-        Plot the spectrum (requires matplotlib)
+        Plot the spectrum (requires matplotlib).
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         wavelength_units : str
             Units for wavelength axis ('angstrom', 'nm', 'micron')
         """
@@ -644,9 +520,7 @@ class GridSource(source.ChaoticSource):
                                    flux_file: str = "../data/Phase0Flux.npy",
                                    B: float = 9.98, distance: float = 204379200000000.0) -> "GridSource":
         """
-        Convenience factory function to create SedonaSN2011feSource from data files.
-        
-        This maintains backward compatibility with the old constructor interface.
+        Convenience factory function to create GridSource from data files.
         
         Parameters
         ----------
@@ -661,12 +535,13 @@ class GridSource(source.ChaoticSource):
             
         Returns
         -------
-        SedonaSN2011feSource
+        GridSource
             Configured source instance
         """
         # Load the data files
         wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
         flux_grid = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+        
         # Check for duplicate values
         if len(wavelength_grid) != len(np.unique(wavelength_grid)):
             raise ValueError("Wavelength grid contains duplicate values")
@@ -679,16 +554,31 @@ class GridSource(source.ChaoticSource):
     
     @staticmethod
     def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0):
-            # Get the current file's directory
-            current_dir = Path(__file__).parent
+        """
+        Create a GridSource instance for SN2011fe using default data files.
+        
+        Parameters
+        ----------
+        B : float
+            Magnitude for flux normalization
+        distance : float
+            Distance to source in meters
+            
+        Returns
+        -------
+        GridSource
+            Configured SN2011fe source instance
+        """
+        # Get the current file's directory
+        current_dir = Path(__file__).parent
 
-            # Try to use real Sedona data first
-            real_wave_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
-            real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
+        # Use real Sedona data
+        real_wave_file = os.path.join(current_dir, '../../data/WaveGrid.npy')
+        real_flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
 
-            wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
-            flux_grid = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+        wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
+        flux_grid = np.flip(np.load(real_flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
 
-            pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
+        pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
 
-            return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B,  distance=distance)
+        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B, distance=distance)
