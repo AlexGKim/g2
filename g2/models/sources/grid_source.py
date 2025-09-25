@@ -160,9 +160,20 @@ class GridSource(source.ChaoticSource):
         if jnp.isscalar(nu):
             # Single frequency
             freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
-            pixel_scale = self.pixel_scale_m/params['distance']  # radians per pixel
+            intensity_map = self.intensity_data[freq_idx, :, :]
             
-            return self._interpolate_intensity(self.intensity_data[freq_idx,:,:], n_hat, pixel_scale)
+            # Transform coordinates and interpolate directly
+            if np.ndim(n_hat) == 1:
+                # Single direction vector
+                x_pixel, y_pixel = self._transform_coordinates(n_hat, params, 'direction')
+                return self._interpolate_grid(intensity_map, x_pixel, y_pixel, 'pixel')
+            else:
+                # Multiple direction vectors
+                intensities = np.zeros(n_hat.shape[0])
+                for i, direction in enumerate(n_hat):
+                    x_pixel, y_pixel = self._transform_coordinates(direction, params, 'direction')
+                    intensities[i] = self._interpolate_grid(intensity_map, x_pixel, y_pixel, 'pixel')
+                return intensities
         else:
             # Array of frequencies
             nu_array = np.asarray(nu)
@@ -268,38 +279,6 @@ class GridSource(source.ChaoticSource):
         else:
             raise ValueError(f"Unknown coord_type: {coord_type}")
 
-    def _interpolate_intensity(self, intensity_map_si: np.ndarray, n_hat: np.ndarray, pixel_scale: float) -> Union[float, np.ndarray]:
-        """
-        Helper method to interpolate intensity from the 2D map.
-        
-        Parameters
-        ----------
-        intensity_map_si : ndarray
-            2D intensity map in SI units
-        n_hat : ndarray
-            Direction vector(s)
-        pixel_scale : float
-            Scale factor for pixel coordinates
-            
-        Returns
-        -------
-        intensity : float or ndarray
-            Interpolated intensity value(s)
-        """
-        # Use common transformation with pixel_scale embedded in params
-        params = {'distance': self.pixel_scale_m / pixel_scale, 'phi_B': self.phi_B}
-        
-        if np.ndim(n_hat) == 1:
-            # Single direction vector
-            x_pixel, y_pixel = self._transform_coordinates(n_hat, params, 'direction')
-            return self._interpolate_grid(intensity_map_si, x_pixel, y_pixel, 'pixel')
-        else:
-            # Multiple direction vectors
-            intensities = np.zeros(n_hat.shape[0])
-            for i, direction in enumerate(n_hat):
-                x_pixel, y_pixel = self._transform_coordinates(direction, params, 'direction')
-                intensities[i] = self._interpolate_grid(intensity_map_si, x_pixel, y_pixel, 'pixel')
-            return intensities
 
     def _transform_coordinates_for_visibility(self, baseline_perp: np.ndarray, params: dict, nu_0: float) -> tuple:
         """
