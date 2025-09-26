@@ -13,9 +13,6 @@ from jax.numpy.fft import fftshift, fftfreq
 from jax import numpy as jnp
 import jax
 
-jax.config.update("jax_enable_x64", True)
-
-
 def _compute_map_fft(intensity_map) -> jnp.ndarray:
     """
     Compute 2D FFT of intensity map for visibility calculation.
