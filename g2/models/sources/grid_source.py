@@ -229,8 +229,9 @@ class GridSource(source.ChaoticSource):
         else:
             raise ValueError(f"Unknown coord_type: {coord_type}")
 
+
     def _interpolate_grid(self, grid_data: jnp.ndarray, u_target: float, v_target: float,
-                         coord_type: str = 'pixel') -> Union[float, complex]:
+                        coord_type: str = 'pixel') -> Union[float, complex]:
         """
         Common grid interpolation for both intensity and FFT data.
         
@@ -249,14 +250,20 @@ class GridSource(source.ChaoticSource):
             Interpolated value
         """
         if coord_type == 'pixel':
-            # For intensity: use pixel coordinates directly
-            if (0 <= u_target < self.nx and 0 <= v_target < self.ny):
-                x0, x1 = int(u_target), min(int(u_target) + 1, self.nx - 1)
-                y0, y1 = int(v_target), min(int(v_target) + 1, self.ny - 1)
-                return grid_data[y0, x0]
-            else:
-                return 0.0
-                
+            # For intensity: use pixel coordinates directly (nearest neighbor)
+            u_idx = jnp.round(u_target).astype(jnp.int32)
+            v_idx = jnp.round(v_target).astype(jnp.int32)
+            
+            # Check bounds
+            in_bounds = (u_idx >= 0) & (u_idx < self.nx) & (v_idx >= 0) & (v_idx < self.ny)
+            
+            # Clamp indices to valid range for array access
+            u_idx_safe = jnp.clip(u_idx, 0, self.nx - 1)
+            v_idx_safe = jnp.clip(v_idx, 0, self.ny - 1)
+            
+            value = grid_data[v_idx_safe, u_idx_safe]
+            return jnp.where(in_bounds, value, 0.0)
+            
         elif coord_type == 'fft':
             # For FFT: find closest grid point in spatial frequency space
             u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
@@ -268,6 +275,45 @@ class GridSource(source.ChaoticSource):
             return grid_data[v_idx, u_idx]
         else:
             raise ValueError(f"Unknown coord_type: {coord_type}")
+    # def _interpolate_grid(self, grid_data: jnp.ndarray, u_target: float, v_target: float,
+    #                      coord_type: str = 'pixel') -> Union[float, complex]:
+    #     """
+    #     Common grid interpolation for both intensity and FFT data.
+        
+    #     Parameters
+    #     ----------
+    #     grid_data : jnp.ndarray
+    #         2D grid data to interpolate from
+    #     u_target, v_target : float
+    #         Target coordinates
+    #     coord_type : str
+    #         Either 'pixel' (for intensity) or 'fft' (for visibility FFT)
+            
+    #     Returns
+    #     -------
+    #     Union[float, complex]
+    #         Interpolated value
+    #     """
+    #     if coord_type == 'pixel':
+    #         # For intensity: use pixel coordinates directly
+    #         if (0 <= u_target < self.nx and 0 <= v_target < self.ny):
+    #             x0, x1 = int(u_target), min(int(u_target) + 1, self.nx - 1)
+    #             y0, y1 = int(v_target), min(int(v_target) + 1, self.ny - 1)
+    #             return grid_data[y0, x0]
+    #         else:
+    #             return 0.0
+                
+    #     elif coord_type == 'fft':
+    #         # For FFT: find closest grid point in spatial frequency space
+    #         u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
+    #         v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
+            
+    #         u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
+    #         v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
+            
+    #         return grid_data[v_idx, u_idx]
+    #     else:
+    #         raise ValueError(f"Unknown coord_type: {coord_type}")
 
 
 
@@ -336,32 +382,181 @@ class GridSource(source.ChaoticSource):
         # Extract perpendicular baseline components
         baseline_perp = baseline[:2]
         
-        # Define a function that computes |V|² with parameter dependence
-        def V_squared_with_params(params_dict):
-            # Make intensity data depend on parameters
-            distance_scale = params_dict['distance'] / self.distance  # Relative distance change
-            
-            # Scale the intensity data based on distance (inverse square law for flux)
-            scaled_intensity = self.intensity_data[freq_idx, :, :] / (distance_scale**2)
-            
-            # Apply magnitude scaling based on B parameter
-            B_scale = 10**((self.B - params_dict['B']) / 2.5)  # Magnitude scaling
-            scaled_intensity = scaled_intensity * B_scale
-            
-            # Compute FFT of the scaled intensity
-            intensity_fft = _compute_map_fft(scaled_intensity)
-            
-            # Use common coordinate transformation
-            u_freq_meters, v_freq_meters = self._transform_coordinates(
-                baseline_perp, params_dict, 'baseline', nu_0)
-            
-            # Use common interpolation method
-            fft_value = self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
-            
-            return jnp.abs(fft_value)**2
+        # Step 1: Calculate |V|² on the native grid
+        intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :])
+        v_squared_grid = jnp.abs(intensity_fft)**2
         
-        # Use JAX to compute the gradient
-        return jax.grad(V_squared_with_params)(params)
+        # Step 2: Calculate the Jacobian on the native grid (∂|V|²/∂x, ∂|V|²/∂y)
+        # Using finite differences for the spatial derivatives
+        dv2_dx = jnp.gradient(v_squared_grid, axis=1)  # derivative along x
+        dv2_dy = jnp.gradient(v_squared_grid, axis=0)  # derivative along y
+        
+        # Step 3: Calculate coordinate transformations and their derivatives
+        # Grid coordinates in spatial frequency space (native units)
+        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))  # cycles/meter
+        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))  # cycles/meter
+        
+        # Create meshgrid for calculations
+        u_grid, v_grid = jnp.meshgrid(jnp.arange(self.nx), jnp.arange(self.ny), indexing='xy')
+        
+        # Define coordinate transformation functions
+        c = 2.99792458e8
+        wavelength = c / nu_0
+        
+        # Transform from grid indices to baseline coordinates
+        # x,y are grid indices, u,v are spatial frequencies, B_u,B_v are baselines
+        # B_u = u * λ * d (before rotation)
+        # B_v = v * λ * d (before rotation)
+        # Then apply rotation by phi_B
+        
+        def compute_jacobian_for_param(param_name):
+            if param_name == 'distance':
+                # ∂x/∂distance and ∂y/∂distance
+                # Since B = u * λ * distance, for fixed B: u ∝ 1/distance
+                # So ∂u/∂distance = -u/distance
+                scale = -1.0 / params['distance']
+                dx_dd = scale * u_grid
+                dy_dd = scale * v_grid
+                
+                # Apply chain rule: ∂|V|²/∂distance = ∂|V|²/∂x * ∂x/∂distance + ∂|V|²/∂y * ∂y/∂distance
+                jacobian_grid = dv2_dx * dx_dd + dv2_dy * dy_dd
+                
+            elif param_name == 'phi_B':
+                # ∂x/∂phi_B and ∂y/∂phi_B
+                # Rotation affects how baseline maps to grid
+                # If baseline is rotated by phi_B, grid effectively rotates by -phi_B
+                # ∂x/∂phi_B = -y, ∂y/∂phi_B = x for rotation derivatives
+                dx_dphi = -(v_grid - self.ny // 2)
+                dy_dphi = (u_grid - self.nx // 2)
+                
+                # Apply chain rule
+                jacobian_grid = dv2_dx * dx_dphi + dv2_dy * dy_dphi
+                
+            elif param_name == 'B':
+                # B affects the flux scaling, but not the visibility pattern
+                # For normalized visibility, ∂|V|²/∂B = 0
+                jacobian_grid = jnp.zeros_like(v_squared_grid)
+                
+            else:
+                jacobian_grid = jnp.zeros_like(v_squared_grid)
+            
+            return jacobian_grid
+        
+        # Step 4: Find which pixel corresponds to the baseline
+        # Transform baseline to grid coordinates
+        cos_phi_B = jnp.cos(params['phi_B'])
+        sin_phi_B = jnp.sin(params['phi_B'])
+        
+        # Apply rotation
+        baseline_rotated = jnp.array([
+            baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
+            -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
+        ])
+        
+        # Convert baseline to spatial frequency
+        u_freq = baseline_rotated[0] / (wavelength * params['distance'])
+        v_freq = baseline_rotated[1] / (wavelength * params['distance'])
+        
+        # Find grid indices
+        u_idx_float = jnp.interp(u_freq, u_coords, jnp.arange(len(u_coords)))
+        v_idx_float = jnp.interp(v_freq, v_coords, jnp.arange(len(v_coords)))
+        
+        # Step 5: Interpolate the Jacobian values at the baseline position
+        jacobian = {}
+        for param_name in params.keys():
+            jacobian_grid = compute_jacobian_for_param(param_name)
+            jacobian[param_name] = self._interpolate_grid(
+                jacobian_grid, u_idx_float, v_idx_float, 'pixel'
+            )
+        
+        return jacobian
+
+    # def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
+    #     """
+    #     Calculate the Jacobian of |V|² with respect to source parameters.
+        
+    #     Parameters
+    #     ----------
+    #     nu_0 : float
+    #         Central frequency in Hz
+    #     baseline : array_like, shape (3,)
+    #         Baseline vector in meters [Bx, By, Bz]
+    #     params : dict, optional
+    #         Source parameters. If None, uses current source parameters
+            
+    #     Returns
+    #     -------
+    #     jacobian : dict
+    #         Dictionary with same keys as params, containing the partial
+    #         derivatives of |V|² with respect to each parameter
+    #     """
+    #     if params is None:
+    #         params = self.get_params()
+        
+    #     # Find the frequency index
+    #     freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
+        
+    #     # Extract perpendicular baseline components
+    #     baseline_perp = baseline[:2]
+        
+    #     # Define a function that computes |V|² with parameter dependence
+    #     def V_squared_with_params(params_dict):
+    #         # Make intensity data depend on parameters
+    #         distance_scale = params_dict['distance'] / self.distance  # Relative distance change
+            
+    #         # Scale the intensity data based on distance (inverse square law for flux)
+    #         scaled_intensity = self.intensity_data[freq_idx, :, :] / (distance_scale**2)
+            
+    #         # Apply magnitude scaling based on B parameter
+    #         B_scale = 10**((self.B - params_dict['B']) / 2.5)  # Magnitude scaling
+    #         scaled_intensity = scaled_intensity * B_scale
+            
+    #         # Compute FFT of the scaled intensity (this gives V on the grid)
+    #         intensity_fft = _compute_map_fft(scaled_intensity)
+            
+    #         # Get grid coordinates in spatial frequency space
+    #         u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
+    #         v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
+            
+    #         # Transform grid coordinates to angular space using parameters
+    #         c = 2.99792458e8
+    #         wavelength = c / nu_0
+            
+    #         # Apply parameter-dependent coordinate transformation to the entire grid
+    #         cos_phi_B = jnp.cos(params_dict['phi_B'])
+    #         sin_phi_B = jnp.sin(params_dict['phi_B'])
+            
+    #         # Transform each grid point from spatial frequency to baseline space
+    #         # This is the inverse of the baseline-to-spatial-frequency transformation
+    #         u_baseline_space = u_coords * wavelength * params_dict['distance']
+    #         v_baseline_space = v_coords * wavelength * params_dict['distance']
+            
+    #         # Apply inverse rotation to get baseline coordinates
+    #         u_baseline_rotated = u_baseline_space * cos_phi_B - v_baseline_space * sin_phi_B
+    #         v_baseline_rotated = u_baseline_space * sin_phi_B + v_baseline_space * cos_phi_B
+            
+    #         # Find the grid point closest to our target baseline
+    #         target_u = baseline_perp[0]
+    #         target_v = baseline_perp[1] if len(baseline_perp) > 1 else 0.0
+            
+    #         # Use differentiable interpolation to get the visibility at the target baseline
+    #         u_idx_float = jnp.interp(target_u, u_baseline_rotated, jnp.arange(len(u_baseline_rotated)))
+    #         v_idx_float = jnp.interp(target_v, v_baseline_rotated, jnp.arange(len(v_baseline_rotated)))
+            
+    #         # Clamp to valid range
+    #         u_idx_float = jnp.clip(u_idx_float, 0, self.nx - 1)
+    #         v_idx_float = jnp.clip(v_idx_float, 0, self.ny - 1)
+            
+    #         # Use nearest neighbor (round to integer)
+    #         u_idx = jnp.round(u_idx_float).astype(int)
+    #         v_idx = jnp.round(v_idx_float).astype(int)
+            
+    #         fft_value = intensity_fft[v_idx, u_idx]
+            
+    #         return jnp.abs(fft_value)**2
+        
+    #     # Use JAX to compute the gradient
+    #     return jax.grad(V_squared_with_params)(params)
 
     def get_params(self) -> dict:
         """
