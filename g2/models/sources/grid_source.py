@@ -98,29 +98,19 @@ class GridSource(source.ChaoticSource):
         if len(self.wavelength_grid) != self.n_wavelengths:
             raise ValueError(f"Wavelength grid length {len(self.wavelength_grid)} doesn't match flux grid wavelength dimension {self.n_wavelengths}")
         
-        # Keep old total_flux_spectrum for backward compatibility in plotting
+        # Calculate specific flux once for efficiency
         specific_flux_values = self.specific_flux()
+        
+        # Keep old total_flux_spectrum for backward compatibility in plotting
         self.total_flux_spectrum = specific_flux_values * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
         h = 6.62607015e-34  # Planck constant
-        specific_flux_values = self.specific_flux()
         self.specific_photon_flux = specific_flux_values / (h * self.frequency_grid)  # [photons/s/m²/Hz]
         
-        # Create interpolation function for flux density
-        sort_indices = np.argsort(self.frequency_grid)
-        freq_sorted = self.frequency_grid[sort_indices]
-        specific_flux_values = self.specific_flux()
-        flux_sorted = specific_flux_values[sort_indices]
-        
-        # Remove any duplicate frequencies
-        unique_mask = np.diff(freq_sorted, prepend=freq_sorted[0]- 1) > 0
-        freq_unique = freq_sorted[unique_mask]
-        flux_unique = flux_sorted[unique_mask]
-        
-        # Store frequency range for reference
-        self.freq_min = np.min(freq_unique)
-        self.freq_max = np.max(freq_unique)
+        # Store frequency range for reference (using frequency grid directly)
+        self.freq_min = np.min(self.frequency_grid)
+        self.freq_max = np.max(self.frequency_grid)
     
     def pixel_scale(self) -> float:
         """
