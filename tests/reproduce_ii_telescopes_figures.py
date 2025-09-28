@@ -20,6 +20,7 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.colors import LogNorm
 import sys
 import os
 from pathlib import Path
@@ -73,7 +74,10 @@ def reproduce_figure_3():
         
         # Use the pre-calculated specific_photon_flux from GridSource
         # This is already in [photons/s/m²/Hz] and properly calculated
-        photon_flux_cgs = source.specific_photon_flux / 1e4  # Convert m² to cm²
+        # But we need to scale by distance to get the flux as observed at Earth
+        distance = source.distance  # meters
+        photon_flux_at_earth = source.specific_photon_flux / (4 * np.pi * distance**2)
+        photon_flux_cgs = photon_flux_at_earth / 1e4  # Convert m² to cm²
         
         # Plot SEDONA spectrum
         ax.plot(wavelengths, photon_flux_cgs, 'b-', linewidth=2, label='SEDONA')
@@ -82,7 +86,8 @@ def reproduce_figure_3():
         ax.set_xlabel('Wavelength [Å]')
         ax.set_ylabel('n_ν [s⁻¹ cm⁻² Hz⁻¹]')
         ax.set_title('Type Ia Supernova Photon Flux Density (Figure 3)')
-        # Use the same limits as the working version
+        # Set appropriate limits for the distance-corrected flux
+        # Should now be in the range 0 - 1e-13 as expected
         ax.set_ylim((0, np.max(photon_flux_cgs[np.logical_and(
             wavelengths > 4000, wavelengths < 8000)]) * 1.1))
         ax.set_xlim((3300, 10000))
@@ -173,10 +178,17 @@ def reproduce_figure_6():
         # Select wavelengths similar to Figure 6
         target_wavelengths = [3697, 4698, 6128, 6190, 8746]  # Angstrom
         
-        # Set up u-v coordinate grid (in km, scaled by λ/5000Å)
-        u_max = 10  # km
-        v_max = 12.5  # km
+        # Set up u-v coordinate grid using proper scaling
+        # Use the same approach as plot_sn2011fe_sedona.py
+        c = 2.99792458e8  # Speed of light
+        
+        # Estimate source angular size (same as working version)
+        theta_estimate = source.pixel_scale() * 6.2  # Rough estimate
+        
+        # Set up zeta grid (dimensionless parameter)
+        zeta_max = 10
         n_points = 25  # Reduced for performance
+        zeta_coords = np.linspace(0.1, zeta_max, n_points)
         
         for i, target_wave in enumerate(target_wavelengths):
             ax = axes[i]
@@ -185,22 +197,22 @@ def reproduce_figure_6():
             wave_idx = np.argmin(np.abs(source.wavelength_grid - target_wave))
             actual_wave = source.wavelength_grid[wave_idx]
             nu_0 = source.frequency_grid[wave_idx]
+            wavelength_m = actual_wave * 1e-10  # Convert Å to m
             
-            # Create u-v grid
-            u_coords = np.linspace(0, u_max, n_points)
-            v_coords = np.linspace(0, v_max, n_points)
-            U, V = np.meshgrid(u_coords, v_coords)
+            # Create u-v grid in terms of baseline lengths
+            # Convert zeta to baseline: B = ζλ/(πθ)
+            baseline_lengths = zeta_coords * wavelength_m / (np.pi * theta_estimate)
+            
+            # Create 2D grid
+            U_baselines, V_baselines = np.meshgrid(baseline_lengths, baseline_lengths)
             
             # Calculate V² for each u-v point
             V_squared_map = np.zeros((n_points, n_points))
             
             for j in range(n_points):
                 for k in range(n_points):
-                    # Convert u-v coordinates to baseline in meters
-                    # Scale by wavelength as in the paper
-                    scale_factor = actual_wave / 5000.0  # λ/5000Å scaling
-                    baseline = np.array([U[j,k] * 1000 * scale_factor, 
-                                       V[j,k] * 1000 * scale_factor, 0.0])
+                    # Use baseline lengths directly
+                    baseline = np.array([U_baselines[j,k], V_baselines[j,k], 0.0])
                     
                     try:
                         V_squared_map[j,k] = source.V_squared(nu_0, baseline)
@@ -208,13 +220,17 @@ def reproduce_figure_6():
                         V_squared_map[j,k] = 0.0
             
             # Plot V² map with logarithmic scale
-            im = ax.imshow(V_squared_map, extent=[0, u_max, 0, v_max], 
-                          origin='lower', cmap='viridis', 
-                          norm=plt.LogNorm(vmin=1e-2, vmax=1.0))
+            # Convert baseline lengths back to km for display
+            u_max_km = np.max(baseline_lengths) / 1000
+            v_max_km = np.max(baseline_lengths) / 1000
             
-            ax.set_xlabel('u [km][λ/5000Å]')
+            im = ax.imshow(V_squared_map, extent=[0, u_max_km, 0, v_max_km],
+                          origin='lower', cmap='viridis',
+                          norm=LogNorm(vmin=1e-2, vmax=1.0))
+            
+            ax.set_xlabel('u [km]')
             if i == 0:
-                ax.set_ylabel('v [km][λ/5000Å]')
+                ax.set_ylabel('v [km]')
             ax.set_title(f'λ = {actual_wave:.0f}Å')
             
             # Add colorbar for the last subplot
@@ -409,9 +425,9 @@ def reproduce_figure_9():
                             SNR_map[j,k] = 0.0
                 
                 # Plot SNR map
-                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max], 
-                              origin='lower', cmap='viridis', 
-                              norm=plt.LogNorm(vmin=1e-2, vmax=1.0))
+                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
+                              origin='lower', cmap='viridis',
+                              norm=LogNorm(vmin=1e-2, vmax=1.0))
                 
                 ax.set_xlabel('u [km][λ/5000Å]')
                 if i == 0:

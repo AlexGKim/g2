@@ -111,7 +111,7 @@ class GridSource(source.ChaoticSource):
         flux_sorted = self.specific_flux[sort_indices]
         
         # Remove any duplicate frequencies
-        unique_mask = np.diff(freq_sorted, prepend=freq_sorted[0]-1) > 0
+        unique_mask = np.diff(freq_sorted, prepend=freq_sorted[0]- 1) > 0
         freq_unique = freq_sorted[unique_mask]
         flux_unique = flux_sorted[unique_mask]
         
