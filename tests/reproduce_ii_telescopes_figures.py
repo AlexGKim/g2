@@ -24,6 +24,8 @@ from matplotlib.colors import LogNorm
 import sys
 import os
 from pathlib import Path
+from astropy.cosmology import Planck18 as cosmo
+import astropy.units as u
 
 # Add parent directory to path to import source module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,7 +53,7 @@ def get_sedona_source():
     """Get the SEDONA SN2011fe source using GridSource.getSN2011feSource"""
     try:
         # Use the factory method to get SN2011fe source
-        source = GridSource.getSN2011feSource()
+        source = GridSource.getSN2011feSource(distance = cosmo.luminosity_distance(0.004).to(u.m).value)
         return source, "SEDONA SN2011fe"
     except Exception as e:
         print(f"Error creating SEDONA source: {e}")
@@ -220,17 +222,19 @@ def reproduce_figure_6():
                         V_squared_map[j,k] = 0.0
             
             # Plot V² map with logarithmic scale
-            # Convert baseline lengths back to km for display
-            u_max_km = np.max(baseline_lengths) / 1000
-            v_max_km = np.max(baseline_lengths) / 1000
+            # Convert baseline lengths back to km and apply wavelength scaling for display
+            # The paper uses units of [km][λ/5000Å]
+            scale_factor = actual_wave / 5000.0  # λ/5000Å scaling
+            u_max_scaled = np.max(baseline_lengths) / 1000 * scale_factor
+            v_max_scaled = np.max(baseline_lengths) / 1000 * scale_factor
             
-            im = ax.imshow(V_squared_map, extent=[0, u_max_km, 0, v_max_km], 
-                          origin='lower', cmap='viridis', 
+            im = ax.imshow(V_squared_map, extent=[0, u_max_scaled, 0, v_max_scaled],
+                          origin='lower', cmap='viridis',
                           norm=LogNorm(vmin=1e-2, vmax=1.0))
             
-            ax.set_xlabel('u [km]')
+            ax.set_xlabel('u [km][λ/5000Å]')
             if i == 0:
-                ax.set_ylabel('v [km]')
+                ax.set_ylabel('v [km][λ/5000Å]')
             ax.set_title(f'λ = {actual_wave:.0f}Å')
             
             # Add colorbar for the last subplot

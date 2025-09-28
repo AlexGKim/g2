@@ -529,7 +529,7 @@ class GridSource(source.ChaoticSource):
         flux_file = os.path.join(current_dir, '../../data/Phase0Flux.npy')
         
         # SN2011fe specific pixel scale
-        pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
+        pixel_scale_m = 3200 * 3600 * 24 * 20 * 1000 # patial scale in m/s per pixel * time since explosion (20 days)
         
         # Call the general factory method
         return GridSource.create_grid_source_from_files(
