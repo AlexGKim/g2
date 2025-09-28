@@ -224,8 +224,8 @@ def reproduce_figure_6():
             u_max_km = np.max(baseline_lengths) / 1000
             v_max_km = np.max(baseline_lengths) / 1000
             
-            im = ax.imshow(V_squared_map, extent=[0, u_max_km, 0, v_max_km],
-                          origin='lower', cmap='viridis',
+            im = ax.imshow(V_squared_map, extent=[0, u_max_km, 0, v_max_km], 
+                          origin='lower', cmap='viridis', 
                           norm=LogNorm(vmin=1e-2, vmax=1.0))
             
             ax.set_xlabel('u [km]')
@@ -425,8 +425,8 @@ def reproduce_figure_9():
                             SNR_map[j,k] = 0.0
                 
                 # Plot SNR map
-                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
-                              origin='lower', cmap='viridis',
+                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max], 
+                              origin='lower', cmap='viridis', 
                               norm=LogNorm(vmin=1e-2, vmax=1.0))
                 
                 ax.set_xlabel('u [km][λ/5000Å]')
