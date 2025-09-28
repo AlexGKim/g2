@@ -80,8 +80,8 @@ class GridSource(source.ChaoticSource):
         # Convert to intensity [W m⁻² Hz⁻¹ sr⁻¹]
         self.intensity_data = jnp.array(flux_grid_mks / (4 * np.pi * pixel_scale_m**2))
 
-        # Calculate total flux spectrum
-        self.specific_flux = np.sum(self.intensity_data, axis=(1, 2))  # [W m⁻² Hz⁻¹]
+        # Store intensity data for dynamic flux calculation
+        # specific_flux will be calculated dynamically based on distance
 
         # Physical constants for unit conversion
         wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
@@ -99,16 +99,19 @@ class GridSource(source.ChaoticSource):
             raise ValueError(f"Wavelength grid length {len(self.wavelength_grid)} doesn't match flux grid wavelength dimension {self.n_wavelengths}")
         
         # Keep old total_flux_spectrum for backward compatibility in plotting
-        self.total_flux_spectrum = self.specific_flux * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
+        specific_flux_values = self.specific_flux()
+        self.total_flux_spectrum = specific_flux_values * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
         h = 6.62607015e-34  # Planck constant
-        self.specific_photon_flux = self.specific_flux / (h * self.frequency_grid)  # [photons/s/m²/Hz]
+        specific_flux_values = self.specific_flux()
+        self.specific_photon_flux = specific_flux_values / (h * self.frequency_grid)  # [photons/s/m²/Hz]
         
         # Create interpolation function for flux density
         sort_indices = np.argsort(self.frequency_grid)
         freq_sorted = self.frequency_grid[sort_indices]
-        flux_sorted = self.specific_flux[sort_indices]
+        specific_flux_values = self.specific_flux()
+        flux_sorted = specific_flux_values[sort_indices]
         
         # Remove any duplicate frequencies
         unique_mask = np.diff(freq_sorted, prepend=freq_sorted[0]- 1) > 0
@@ -385,6 +388,33 @@ class GridSource(source.ChaoticSource):
             'phi_B': self.phi_B
         }
     
+    def specific_flux(self, params: dict = None) -> np.ndarray:
+        """
+        Calculate specific flux spectrum accounting for distance-dependent pixel scale.
+        
+        Parameters
+        ----------
+        params : dict, optional
+            Source parameters. If None, uses current source parameters
+            
+        Returns
+        -------
+        flux : np.ndarray
+            Specific flux spectrum in W m⁻² Hz⁻¹
+        """
+        if params is None:
+            params = self.get_params()
+        
+        # Calculate pixel scale in steradians based on current distance
+        pixel_scale_rad = self.pixel_scale_m / params['distance']  # radians per pixel
+        pixel_area_sr = pixel_scale_rad**2  # steradians per pixel
+        
+        # Sum intensity over spatial dimensions and multiply by pixel area
+        # intensity_data is in [W m⁻² Hz⁻¹ sr⁻¹], so multiplying by sr gives [W m⁻² Hz⁻¹]
+        flux_spectrum = np.sum(self.intensity_data, axis=(1, 2)) * pixel_area_sr
+        
+        return flux_spectrum
+
     def total_flux(self, nu: float) -> float:
         """
         Calculate total flux F_nu = ∫ I_nu d²n̂.
@@ -399,7 +429,8 @@ class GridSource(source.ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹
         """
-        return jnp.interp(nu, self.frequency_grid, self.specific_flux)
+        flux_spectrum = self.specific_flux()
+        return jnp.interp(nu, self.frequency_grid, flux_spectrum)
     
     def get_spectrum_info(self):
         """
@@ -413,8 +444,8 @@ class GridSource(source.ChaoticSource):
         return {
             'wavelength_range_angstrom': (np.min(self.wavelength_grid), np.max(self.wavelength_grid)),
             'frequency_range_hz': (self.freq_min, self.freq_max),
-            'peak_flux_density_w_m2_hz': np.max(self.specific_flux),
-            'total_luminosity_estimate': np.trapezoid(self.specific_flux, self.frequency_grid),
+            'peak_flux_density_w_m2_hz': np.max(self.specific_flux()),
+            'total_luminosity_estimate': np.trapezoid(self.specific_flux(), self.frequency_grid),
             'spatial_grid': (self.nx, self.ny),
             'wavelength_points': self.n_wavelengths
         }

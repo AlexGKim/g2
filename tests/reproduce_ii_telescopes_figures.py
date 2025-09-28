@@ -71,15 +71,21 @@ def reproduce_figure_3():
         if source is None:
             raise Exception("Could not create source")
         
-        # Get wavelength grid and pre-calculated photon flux density
-        wavelengths = source.wavelength_grid  # [Angstrom]
+        # Get wavelength grid
+        wavelengths = np.array(source.wavelength_grid)  # [Angstrom] - convert from jnp to np
+        frequency_grid = np.array(source.frequency_grid)  # [Hz] - convert from jnp to np
         
-        # Use the pre-calculated specific_photon_flux from GridSource
-        # This is already in [photons/s/m²/Hz] and properly calculated
-        # But we need to scale by distance to get the flux as observed at Earth
-        distance = source.distance  # meters
-        photon_flux_at_earth = source.specific_photon_flux / (4 * np.pi * distance**2)
-        photon_flux_cgs = photon_flux_at_earth / 1e4  # Convert m² to cm²
+        # Use the new specific_flux method which accounts for distance properly
+        flux_at_earth_mks = np.array(source.specific_flux())  # [W m⁻² Hz⁻¹] at Earth
+        
+        # Convert from MKS to CGS: [W m⁻² Hz⁻¹] to [erg s⁻¹ cm⁻² Hz⁻¹]
+        flux_at_earth_cgs = flux_at_earth_mks * 1e3  # W to erg/s: 1W = 1e7 erg/s, m² to cm²: 1m² = 1e4 cm²
+        # So: 1e7 / 1e4 = 1e3
+        
+        # Convert to photon flux density [photons/s/cm²/Hz]
+        h = 6.62607015e-27  # erg⋅s (CGS units)
+        
+        photon_flux_cgs = flux_at_earth_cgs / (h * frequency_grid)  # [photons/s/cm²/Hz]
         
         # Plot SEDONA spectrum
         ax.plot(wavelengths, photon_flux_cgs, 'b-', linewidth=2, label='SEDONA')

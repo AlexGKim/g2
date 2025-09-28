@@ -108,37 +108,9 @@ def create_mock_data():
 
 def get_source():
     """Get a SedonaSN2011feSource instance, using real data if available, mock data otherwise"""
-
-    source = GridSource.getSN2011feSource() 
-    data_type = "Real Sedona Data"
-    return source, data_type
     try:
-
-
-        # Get the current file's directory
-        current_dir = Path(__file__).parent
-
-        # Try to use real Sedona data first
-        real_wave_file = os.path.join(current_dir, '../g2/data/WaveGrid.npy')
-        real_flux_file = os.path.join(current_dir, '../g2/data/Phase0Flux.npy')
-
-        if os.path.exists(real_wave_file) and os.path.exists(real_flux_file):
-            wavelength_grid = np.flip(np.load(real_wave_file))  # [Angstrom]
-            flux_data = np.flip(np.load(real_flux_file),axis=0)  # [erg/s/cm²/Å] - 3D array
-            # Use real Sedona data
-            source = GridSource(wavelength_grid, flux_data)
-            data_type = "Real Sedona Data"
-        else:
-            # Fallback to mock data
-            wavelengths, flux_3d = create_mock_data()
-            temp_dir = tempfile.mkdtemp()
-            wave_file = os.path.join(temp_dir, 'WaveGrid.npy')
-            flux_file = os.path.join(temp_dir, 'Phase0Flux.npy')
-            np.save(wave_file, wavelengths)
-            np.save(flux_file, flux_3d)
-            source = GridSource(wave_file, flux_file)
-            data_type = "Mock Data"
-            
+        source = GridSource.getSN2011feSource()
+        data_type = "Real Sedona Data"
         return source, data_type
     except Exception as e:
         print(f"Error creating source: {e}")
@@ -172,7 +144,7 @@ def plot_data_loading_and_initialization():
         ax2.grid(True, alpha=0.3)
         
         # Plot 3: Flux density in SI units
-        ax3.plot(source.frequency_grid / 1e14, source.specific_flux, 'g-', linewidth=2)
+        ax3.plot(source.frequency_grid / 1e14, source.specific_flux(), 'g-', linewidth=2)
         ax3.set_xlabel('Frequency (×10¹⁴ Hz)')
         ax3.set_ylabel('Flux Density (W/m²/Hz)')
         ax3.set_title('Flux Density vs Frequency')
