@@ -762,5 +762,5 @@ class GridSource(source.ChaoticSource):
             B=B,
             distance=distance,
             phi_B=phi_B,
-            padfactor=2
+            padfactor=4
         )
