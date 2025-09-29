@@ -102,7 +102,7 @@ class GridSource(source.ChaoticSource):
         specific_flux_values = self.specific_flux()
         
         # Keep old total_flux_spectrum for backward compatibility in plotting
-        self.total_flux_spectrum = specific_flux_values * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
+        # self.total_flux_spectrum = specific_flux_values * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
         h = 6.62607015e-34  # Planck constant
@@ -660,7 +660,7 @@ class GridSource(source.ChaoticSource):
                 raise ValueError("wavelength_units must be 'angstrom', 'nm', or 'micron'")
             
             plt.figure(figsize=(10, 6))
-            plt.plot(wave_plot, self.total_flux_spectrum, 'b-', linewidth=1)
+            plt.plot(wave_plot, self.flux_grid.sum(index(1,2)), 'b-', linewidth=1)
             plt.xlabel(xlabel)
             plt.ylabel('Total Flux Density [erg/s/cm²/Å]')
             plt.title('Sedona SN2011fe Spectrum (Phase 0) - Spatially Integrated')
@@ -677,7 +677,7 @@ class GridSource(source.ChaoticSource):
                                 pixel_scale_m: float = None,
                                 B: float = 9.98, 
                                 distance: float = 204379200000000.0,
-                                phi_B: float = 0.0) -> "GridSource":
+                                phi_B: float = 0.0, padfactor=1) -> "GridSource":
         """
         Convenience factory function to create GridSource from data files.
         
@@ -717,6 +717,13 @@ class GridSource(source.ChaoticSource):
         if pixel_scale_m is None:
             pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
 
+        # Padded grid
+        if padfactor > 1:
+            pad_x = (padfactor - 1) * flux_grid.shape[1] // 2
+            pad_y = (padfactor - 1) * flux_grid.shape[2] // 2
+            flux_grid = np.pad(flux_grid, ((0,0),(pad_x,pad_x),(pad_y,pad_y)), mode='constant', constant_values=0)
+            # pixel_scale_m = pixel_scale_m / padfactor  # Adjust pixel scale accordingly
+
         return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B, distance=distance, phi_B=phi_B)
 
     @staticmethod
@@ -746,7 +753,7 @@ class GridSource(source.ChaoticSource):
         
         # SN2011fe specific pixel scale
         pixel_scale_m = 3200 * 3600 * 24 * 20 * 1000 # patial scale in m/s per pixel * time since explosion (20 days)
-        
+
         # Call the general factory method
         return GridSource.create_grid_source_from_files(
             wave_grid_file=wave_grid_file,
@@ -754,5 +761,6 @@ class GridSource(source.ChaoticSource):
             pixel_scale_m=pixel_scale_m,
             B=B,
             distance=distance,
-            phi_B=phi_B
+            phi_B=phi_B,
+            padfactor=2
         )

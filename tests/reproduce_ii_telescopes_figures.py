@@ -313,7 +313,7 @@ def reproduce_figure_7():
                     V_squared_u0.append(0.0)
             
             # Plot V² vs ζ (left panel)
-            ax1.semilogy(zeta_coords, V_squared_v0, color=color, linewidth=2,
+            ax1.plot(zeta_coords, V_squared_v0, color=color, linewidth=2,
                         label=f'λ = {actual_wave:.0f}Å')
             
             # Plot difference V²(v=0) - V²(u=0) (right panel)
@@ -331,7 +331,7 @@ def reproduce_figure_7():
                 else:
                     airy_val = abs(2 * j1(zeta) / zeta)**2
                     airy_v2.append(airy_val)
-            ax1.semilogy(zeta_coords, airy_v2, 'k--', alpha=0.7, label='Airy')
+            ax1.plot(zeta_coords, airy_v2, 'k--', alpha=0.7, label='Airy')
         except:
             pass
         
@@ -339,7 +339,7 @@ def reproduce_figure_7():
         ax1.set_xlabel('ζ = πBθ/λ')
         ax1.set_ylabel('V²')
         ax1.set_title('V² vs ζ (v=0 slice)')
-        ax1.set_ylim(1e-3, 1.1)
+        ax1.set_ylim(0, 1.1)
         ax1.legend()
         ax1.grid(True, alpha=0.3)
         
