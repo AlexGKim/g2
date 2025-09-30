@@ -14,7 +14,7 @@ def summary(source):
     D_res = (1.22 * lambda_0  / (2 * source.radius))
 
     # Calculate inverse noise for a baseline measurement half the resolution limit
-    baseline = np.array([D_res/2, 0.0, 0.0])
+    baseline = np.array([D_res/2, -D_res/1.5, 0.0])
 
     # Observational parameters
     telescope_area = 1.0  # m²
@@ -71,7 +71,7 @@ def summary(source):
 from g2.models.sources.simple import MultiPoint
 # Create a simple binary system
 flux_densities = [1e-26, 5e-27]  # W/m²/Hz - Primary and Secondary
-positions = [[1e-8, 0], [-1e-8, 0]]  # radians - positions
+positions = [[1e-8, 0], [-1e-8, 0.5e-8]]  # radians - positions
 source = MultiPoint(flux_densities, positions)
 source.radius = 2e-8  # Set radius to 20 microarcseconds
 # multipoint-end

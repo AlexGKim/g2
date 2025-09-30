@@ -194,13 +194,47 @@ def fisher_matrix(
     """
     # Get parameter names in consistent order
     params = list(source.get_params().keys())
-    n_params = len(params)
+    
+    # Flatten all parameter values to get total number of scalar parameters
+    param_values = source.get_params()
+    flattened_params = []
+    param_indices = {}  # Track which indices correspond to which parameters
+    
+    start_idx = 0
+    for param_name in params:
+        value = param_values[param_name]
+        if np.isscalar(value):
+            # Scalar parameter
+            flattened_params.append(value)
+            param_indices[param_name] = slice(start_idx, start_idx + 1)
+            start_idx += 1
+        else:
+            # Array parameter - flatten it
+            value_array = np.asarray(value)
+            flat_value = value_array.flatten()
+            flattened_params.extend(flat_value)
+            param_indices[param_name] = slice(start_idx, start_idx + len(flat_value))
+            start_idx += len(flat_value)
+    
+    n_params = len(flattened_params)
     fisher = np.zeros((n_params, n_params))
     
     for obs in observations:
         # Compute Jacobian of V_squared with respect to parameters
         jacobian_dict = source.V_squared_jacobian(nu_0=obs.nu_0, baseline=obs.baseline)
-        jacobian = np.array([jacobian_dict[p] for p in params])
+        
+        # Flatten the jacobian values in the same order as parameters
+        jacobian = []
+        for param_name in params:
+            grad_value = jacobian_dict[param_name]
+            if np.isscalar(grad_value):
+                jacobian.append(grad_value)
+            else:
+                # Flatten array gradients
+                grad_array = np.asarray(grad_value)
+                jacobian.extend(grad_array.flatten())
+        
+        jacobian = np.array(jacobian)
         
         # Calculate inverse noise (standard deviation) for this observation
         sigma = inverse_noise(source, obs)
