@@ -276,7 +276,7 @@ class UniformDisk(ChaoticSource):
     def get_params(self) -> Dict[str, Any]:
         """Extract parameters as a dictionary"""
         return {
-            'flux_density': self.flux_density,
+            # 'flux_density': self.flux_density,
             'radius': self.radius
         }
 
@@ -480,10 +480,10 @@ class MultiPoint(ChaoticSource):
     def get_params(self) -> Dict[str, Any]:
         """Extract parameters as a dictionary"""
         return {
-            'flux_densities': self.flux_densities,
+            # 'flux_densities': self.flux_densities,
             'positions': self.positions,
-            'spectral_indices': self.spectral_indices,
-            'reference_frequency': self.reference_frequency
+            # 'spectral_indices': self.spectral_indices,
+            # 'reference_frequency': self.reference_frequency
         }
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, atol: float = 1e-10) -> Union[float, np.ndarray]:
@@ -581,10 +581,10 @@ class MultiPoint(ChaoticSource):
         V_current = self.V(nu_0, baseline, params)
         
         # Flux densities: derivative is 0 (invariant to uniform scaling)
-        flux_grad = jnp.zeros_like(params['flux_densities'])
+        flux_grad = jnp.zeros_like(self.flux_densities)
         
         # Positions: compute analytical derivative
-        source_fluxes = params['flux_densities'] * (nu_0 / params['reference_frequency']) ** params['spectral_indices']
+        source_fluxes = self.flux_densities * (nu_0 / self.reference_frequency) ** self.spectral_indices
         total_flux = jnp.sum(source_fluxes)
         
         # Calculate derivative w.r.t. each position component
@@ -609,7 +609,7 @@ class MultiPoint(ChaoticSource):
             pos_grad = pos_grad.at[i].set(d_abs_V_squared_dpos_i)
         
         # Spectral indices: 0 at reference frequency
-        spectral_grad = jnp.zeros_like(params['spectral_indices'])
+        spectral_grad = jnp.zeros_like(self.spectral_indices)
         
         # Reference frequency: 0 when evaluated at reference frequency
         ref_freq_grad = 0.0
@@ -657,7 +657,7 @@ class MultiPoint(ChaoticSource):
         baseline_perp = baseline[:2]
         
         # Calculate flux for each source at the given frequency
-        source_fluxes = params['flux_densities'] * (nu_0 / params['reference_frequency']) ** params['spectral_indices']
+        source_fluxes = self.flux_densities * (nu_0 / self.reference_frequency) ** self.spectral_indices
         
         # Calculate phases for each source position
         phases = 2 * jnp.pi * jnp.dot(params['positions'], baseline_perp) / wavelength

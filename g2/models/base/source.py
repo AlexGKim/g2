@@ -264,7 +264,7 @@ class AbstractSource(ABC):
     @abstractmethod
     def get_params(self) -> dict:
         """
-        Return the parameters that define the source model.
+        Return the parameters that define the source model that affect the visibility
         
         These parameters are particularly important for those that may be
         varied in fitting or optimization procedures.

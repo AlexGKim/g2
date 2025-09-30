@@ -47,7 +47,7 @@ class GridSource(source.ChaoticSource):
     """
     
     def __init__(self, wavelength_grid: np.ndarray, flux_grid: np.ndarray, pixel_scale_m: float,
-                 B: float = 9.98, distance: float = 204379200000000.0, phi_B: float = 0.0):
+                 distance: float = 204379200000000.0, phi_B: float = 0.0):
         """
         Initialize GridSource with wavelength and flux grids.
         
@@ -59,8 +59,6 @@ class GridSource(source.ChaoticSource):
             3D flux data in [erg/s/Å], shape (n_wavelengths, nx, ny)
         pixel_scale_m : float
             Pixel scale in meters per pixel
-        B : float
-            Magnitude for flux normalization
         distance : float
             Distance to source in meters
         phi_B : float
@@ -87,7 +85,7 @@ class GridSource(source.ChaoticSource):
         wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
 
         # Store parameters
-        self.B = B
+        # self.B = B
         self.distance = distance
         self.phi_B = phi_B
         
@@ -386,90 +384,69 @@ class GridSource(source.ChaoticSource):
         intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :])
         v_squared_grid = jnp.abs(intensity_fft)**2
         
-        # Step 2: Calculate the Jacobian on the native grid (∂|V|²/∂x, ∂|V|²/∂y)
-        # Using finite differences for the spatial derivatives
-        dv2_dx = jnp.gradient(v_squared_grid, axis=1)  # derivative along x
-        dv2_dy = jnp.gradient(v_squared_grid, axis=0)  # derivative along y
-        
-        # Step 3: Calculate coordinate transformations and their derivatives
-        # Grid coordinates in spatial frequency space (native units)
+        # Step 2: Calculate the gradient of |V|² in spatial frequency space
+        # These are ∂|V|²/∂u and ∂|V|²/∂v where u,v are in cycles/meter
         u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))  # cycles/meter
         v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))  # cycles/meter
         
-        # Create meshgrid for calculations
-        u_grid, v_grid = jnp.meshgrid(jnp.arange(self.nx), jnp.arange(self.ny), indexing='xy')
+        # Compute spacing in spatial frequency
+        du = u_coords[1] - u_coords[0] if len(u_coords) > 1 else 1.0
+        dv = v_coords[1] - v_coords[0] if len(v_coords) > 1 else 1.0
         
-        # Define coordinate transformation functions
+        # Gradient with respect to spatial frequency coordinates (not grid indices!)
+        dv2_du = jnp.gradient(v_squared_grid, du, axis=1)  # ∂|V|²/∂u
+        dv2_dv = jnp.gradient(v_squared_grid, dv, axis=0)  # ∂|V|²/∂v
+        
+        # Step 3: Calculate the current (u,v) point for this baseline
         c = 2.99792458e8
         wavelength = c / nu_0
         
-        # Transform from grid indices to baseline coordinates
-        # x,y are grid indices, u,v are spatial frequencies, B_u,B_v are baselines
-        # B_u = u * λ * d (before rotation)
-        # B_v = v * λ * d (before rotation)
-        # Then apply rotation by phi_B
-        
-        def compute_jacobian_for_param(param_name):
-            if param_name == 'distance':
-                # ∂x/∂distance and ∂y/∂distance
-                # Since B = u * λ * distance, for fixed B: u ∝ 1/distance
-                # So ∂u/∂distance = -u/distance
-                scale = -1.0 / params['distance']
-                dx_dd = scale * u_grid
-                dy_dd = scale * v_grid
-                
-                # Apply chain rule: ∂|V|²/∂distance = ∂|V|²/∂x * ∂x/∂distance + ∂|V|²/∂y * ∂y/∂distance
-                jacobian_grid = dv2_dx * dx_dd + dv2_dy * dy_dd
-                
-            elif param_name == 'phi_B':
-                # ∂x/∂phi_B and ∂y/∂phi_B
-                # Rotation affects how baseline maps to grid
-                # If baseline is rotated by phi_B, grid effectively rotates by -phi_B
-                # ∂x/∂phi_B = -y, ∂y/∂phi_B = x for rotation derivatives
-                dx_dphi = -(v_grid - self.ny // 2)
-                dy_dphi = (u_grid - self.nx // 2)
-                
-                # Apply chain rule
-                jacobian_grid = dv2_dx * dx_dphi + dv2_dy * dy_dphi
-                
-            elif param_name == 'B':
-                # B affects the flux scaling, but not the visibility pattern
-                # For normalized visibility, ∂|V|²/∂B = 0
-                jacobian_grid = jnp.zeros_like(v_squared_grid)
-                
-            else:
-                jacobian_grid = jnp.zeros_like(v_squared_grid)
-            
-            return jacobian_grid
-        
-        # Step 4: Find which pixel corresponds to the baseline
-        # Transform baseline to grid coordinates
         cos_phi_B = jnp.cos(params['phi_B'])
         sin_phi_B = jnp.sin(params['phi_B'])
         
-        # Apply rotation
+        # Apply rotation to baseline
         baseline_rotated = jnp.array([
             baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
             -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
         ])
         
-        # Convert baseline to spatial frequency
-        u_freq = baseline_rotated[0] / (wavelength * params['distance'])
-        v_freq = baseline_rotated[1] / (wavelength * params['distance'])
+        # Convert baseline to spatial frequency coordinates
+        u_target = baseline_rotated[0] / (wavelength * params['distance'])
+        v_target = baseline_rotated[1] / (wavelength * params['distance'])
         
-        # Find grid indices
-        u_idx_float = jnp.interp(u_freq, u_coords, jnp.arange(len(u_coords)))
-        v_idx_float = jnp.interp(v_freq, v_coords, jnp.arange(len(v_coords)))
+        # Find nearest grid point
+        u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
+        v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
         
-        # Step 5: Interpolate the Jacobian values at the baseline position
+        # Get gradient values at this point
+        dv2_du_at_point = dv2_du[v_idx, u_idx]
+        dv2_dv_at_point = dv2_dv[v_idx, u_idx]
+        
+        # Step 4: Calculate derivatives of (u,v) with respect to parameters
         jacobian = {}
-        for param_name in params.keys():
-            jacobian_grid = compute_jacobian_for_param(param_name)
-            jacobian[param_name] = self._interpolate_grid(
-                jacobian_grid, u_idx_float, v_idx_float, 'pixel'
-            )
+        
+        # For distance: u = B_rotated/(λ*distance), so ∂u/∂distance = -u/distance
+        if 'distance' in params:
+            du_dd = -u_target / params['distance']
+            dv_dd = -v_target / params['distance']
+            jacobian['distance'] = dv2_du_at_point * du_dd + dv2_dv_at_point * dv_dd
+        
+        # For phi_B: need to account for rotation
+        if 'phi_B' in params:
+            # When phi_B changes, the rotated baseline changes
+            # ∂(B_rot_x)/∂phi_B = -Bx*sin(phi_B) + By*cos(phi_B) = -B_rot_y
+            # ∂(B_rot_y)/∂phi_B = -Bx*cos(phi_B) - By*sin(phi_B) = B_rot_x
+            d_brot_x_dphi = -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
+            d_brot_y_dphi = baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B
+            
+            # This gives us ∂u/∂phi_B and ∂v/∂phi_B
+            du_dphi = d_brot_x_dphi / (wavelength * params['distance'])
+            dv_dphi = d_brot_y_dphi / (wavelength * params['distance'])
+            
+            jacobian['phi_B'] = dv2_du_at_point * du_dphi + dv2_dv_at_point * dv_dphi
         
         return jacobian
+    
 
     # def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
     #     """
@@ -568,7 +545,7 @@ class GridSource(source.ChaoticSource):
             Dictionary containing source parameters
         """
         return {
-            'B': self.B,
+            # 'B': self.B,
             'distance': self.distance,
             'phi_B': self.phi_B
         }
@@ -675,7 +652,6 @@ class GridSource(source.ChaoticSource):
     def create_grid_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
                                 flux_file: str = "../data/Phase0Flux.npy",
                                 pixel_scale_m: float = None,
-                                B: float = 9.98, 
                                 distance: float = 204379200000000.0,
                                 phi_B: float = 0.0, padfactor=1) -> "GridSource":
         """
@@ -724,7 +700,7 @@ class GridSource(source.ChaoticSource):
             flux_grid = np.pad(flux_grid, ((0,0),(pad_x,pad_x),(pad_y,pad_y)), mode='constant', constant_values=0)
             # pixel_scale_m = pixel_scale_m / padfactor  # Adjust pixel scale accordingly
 
-        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, B=B, distance=distance, phi_B=phi_B)
+        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, distance=distance, phi_B=phi_B)
 
     @staticmethod
     def getSN2011feSource(B: float = 9.98, distance: float = 204379200000000.0,
@@ -734,8 +710,6 @@ class GridSource(source.ChaoticSource):
         
         Parameters
         ----------
-        B : float
-            Magnitude for flux normalization
         distance : float
             Distance to source in meters
             
@@ -759,7 +733,6 @@ class GridSource(source.ChaoticSource):
             wave_grid_file=wave_grid_file,
             flux_file=flux_file,
             pixel_scale_m=pixel_scale_m,
-            B=B,
             distance=distance,
             phi_B=phi_B,
             padfactor=4

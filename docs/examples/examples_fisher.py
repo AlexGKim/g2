@@ -32,23 +32,26 @@ def summary(source):
     # Calculate Fisher matrix
     print("Fisher matrix calculation:")
     
-    # Create a set of observations for Fisher matrix
-    observations = []
-    # Add observations at different baselines
+    # Create observation configuration (telescope/detector setup)
+    obs = Observation(
+        integration_time=integration_time,
+        telescope_area=telescope_area,
+        throughput=throughput,
+        detector_jitter=detector_jitter
+    )
+    
+    # Create lists of frequencies and baselines for Fisher matrix calculation
+    nu_0_list = []
+    baseline_list = []
+    
+    # Add measurements at different baselines
     for b in baselines[:2]:  # Use first two baselines
         for nu in [nu_0]:  # Use base frequency
-            obs = Observation(
-                nu_0=float(nu),
-                baseline=np.array(b),
-                integration_time=integration_time,
-                telescope_area=telescope_area,
-                throughput=throughput,
-                detector_jitter=detector_jitter
-            )
-            observations.append(obs)
+            nu_0_list.append(float(nu))
+            baseline_list.append(np.array(b))
     
     # Calculate Fisher matrix
-    F = fisher_matrix(source, observations)
+    F = fisher_matrix(source, nu_0_list, baseline_list, obs)
     print(f"Fisher matrix shape: {F.shape}")
     print(f"Fisher matrix:\n{F}")
     
@@ -57,10 +60,29 @@ def summary(source):
         cov_matrix = np.linalg.inv(F)
         uncertainties = np.sqrt(np.diag(cov_matrix))
         print("\nParameter uncertainties (Cramér-Rao bound):")
-        for param, uncertainty in zip(source.get_params().keys(), uncertainties):
-            param_value = source.get_params()[param]
-            relative_uncertainty = uncertainty / abs(param_value) if param_value != 0 else float('inf')
-            print(f"  {param}: {uncertainty:.2e} (relative: {relative_uncertainty:.2%})")
+        param_names = list(source.get_params().keys())
+        param_values = source.get_params()
+        
+        # Handle both scalar and array parameters
+        uncertainty_idx = 0
+        for param_name in param_names:
+            param_value = param_values[param_name]
+            if np.isscalar(param_value):
+                # Scalar parameter
+                uncertainty = uncertainties[uncertainty_idx]
+                relative_uncertainty = uncertainty / abs(param_value) if param_value != 0 else float('inf')
+                print(f"  {param_name}: {uncertainty:.2e} (relative: {relative_uncertainty:.2%})")
+                uncertainty_idx += 1
+            else:
+                # Array parameter
+                param_array = np.asarray(param_value)
+                param_flat = param_array.flatten()
+                for i, val in enumerate(param_flat):
+                    uncertainty = uncertainties[uncertainty_idx]
+                    relative_uncertainty = uncertainty / abs(val) if val != 0 else float('inf')
+                    print(f"  {param_name}[{i}]: {uncertainty:.2e} (relative: {relative_uncertainty:.2%})")
+                    uncertainty_idx += 1
+                    
     except np.linalg.LinAlgError:
         print("Fisher matrix is singular - cannot compute uncertainties")
     

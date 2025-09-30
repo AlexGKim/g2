@@ -1,12 +1,12 @@
 import numpy as np
 from jax import numpy as jnp
 import jax
-from g2 import inverse_noise
+from g2 import inverse_noise, Observation
 
 # summary-begin
 def summary(source):
     c = 2.99792458e8  # Speed of light in m/s
-    # the observation bnadpass
+    # the observation bandpass
     nu_0 = 5e14  # 600 nm
     lambda_0 = c / nu_0  # Wavelength in meters
 
@@ -22,13 +22,20 @@ def summary(source):
     detector_jitter = 1e-11  # 10 ps
     throughput = 1.
 
+    obs = Observation(
+        integration_time=integration_time,
+        telescope_area=telescope_area,
+        throughput=throughput,
+        detector_jitter=detector_jitter
+    )
+
     nus = jnp.array([nu_0, nu_0*1.1])
     baselines = jnp.array([baseline, baseline*1.1])
     print("")
     print("Source type:", type(source).__name__)  # Print source type
     print("Source parameters:", source.get_params())    # Print source parameters
 
-    # Calclate signal
+    # Calculate signal
     print("|V|^2:")
     print(". nu scalar")
     print(source.V_squared(nu_0, baseline))
@@ -57,20 +64,14 @@ def summary(source):
     # Calculate noise
     print("Inverse noise (SNR) for 1 hour integration:", end=" ")
     print(". nu scalar")
-    print(inverse_noise(source, nu_0, baseline, integration_time, telescope_area=telescope_area,
-                                throughput=throughput, detector_jitter=detector_jitter))
+    print(inverse_noise(source, nu_0, baseline, obs))
     print(". nu vectorized")
-    print(jax.vmap(inverse_noise, in_axes=(None, 0, None, None, None, None, None))(source, nus, baseline, integration_time,
-                                telescope_area,
-                                throughput, detector_jitter))
+    print(jax.vmap(inverse_noise, in_axes=(None, 0, None, None))(source, nus, baseline, obs))
     print(". baseline vectorized")
-    print(jax.vmap(inverse_noise, in_axes=(None, None, 0, None, None, None, None))(source, nus, baseline, integration_time,
-                                telescope_area,
-                                throughput, detector_jitter))
+    print(jax.vmap(inverse_noise, in_axes=(None, None, 0, None))(source, nu_0, baselines, obs))
     print(". nu and baseline vectorized")
     print(jax.vmap(lambda nu: jax.vmap(
-        lambda b: inverse_noise(source, nu, b, integration_time, 
-                               telescope_area, throughput, detector_jitter))(baseline))(nus))
+        lambda b: inverse_noise(source, nu, b, obs))(baselines))(nus))
     
     return
 # summary-end

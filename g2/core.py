@@ -39,38 +39,38 @@ Usage Example
     # Create a uniform disk source
     disk = UniformDisk(flux_density=1e-26, radius=1e-8)
     
-    # Define observation parameters
+    # Define observation parameters (telescope/detector configuration)
     observation = Observation(
-        nu_0=5e14,
-        baseline=np.array([100.0, 0.0, 0.0]),
         integration_time=3600,
         telescope_area=1.0,
         throughput=1.0,
         detector_jitter=0.0
     )
     
-    # Calculate inverse noise
-    inv_noise = calculate_inverse_noise(disk, observation)
+    # Calculate inverse noise for specific frequency and baseline
+    nu_0 = 5e14  # Hz
+    baseline = np.array([100.0, 0.0, 0.0])  # meters
+    inv_noise = calculate_inverse_noise(disk, nu_0, baseline, observation)
     print(f"Inverse noise: {inv_noise:.2e}")
 """
 
 import numpy as np
 from typing import List, Dict, Optional, Union
 from dataclasses import dataclass
-from .models.base.source import ChaoticSource, AbstractSource
+from g2.models.base.source import ChaoticSource, AbstractSource
 
 
 @dataclass
 class Observation:
     """
-    Represents an observational configuration for intensity interferometry.
+    Represents telescope and detector configuration for intensity interferometry.
+    
+    This dataclass contains the instrumental parameters that define the 
+    observational setup, independent of the specific measurement frequency
+    and baseline configuration.
     
     Attributes
     ----------
-    nu_0 : float
-        Central frequency in Hz.
-    baseline : np.ndarray
-        Baseline vector in meters [Bx, By, Bz].
     integration_time : float
         Integration time in seconds.
     telescope_area : float, optional
@@ -80,15 +80,18 @@ class Observation:
     detector_jitter : float, optional
         Detector timing jitter in seconds. Default is 0.0.
     """
-    nu_0: float
-    baseline: np.ndarray
     integration_time: float
     telescope_area: float = 1.0
     throughput: float = 1.0
     detector_jitter: float = 0.0
 
 
-def inverse_noise(source: ChaoticSource, observation: Observation) -> float:
+def inverse_noise(
+    source: ChaoticSource,
+    nu_0: float,
+    baseline: np.ndarray,
+    observation: Observation
+) -> float:
     """
     Calculate inverse noise (Fisher information) for chaotic source measurements.
     
@@ -101,8 +104,12 @@ def inverse_noise(source: ChaoticSource, observation: Observation) -> float:
     ----------
     source : ChaoticSource
         The chaotic light source object.
+    nu_0 : float
+        Central frequency in Hz.
+    baseline : np.ndarray
+        Baseline vector in meters [Bx, By, Bz].
     observation : Observation
-        Observational configuration containing parameters for the measurement.
+        Telescope and detector configuration parameters.
         
     Returns
     -------
@@ -131,10 +138,10 @@ def inverse_noise(source: ChaoticSource, observation: Observation) -> float:
     h = 6.62607015e-34  # Planck constant (J⋅s)
     
     # Calculate photon energy
-    photon_energy = h * observation.nu_0
+    photon_energy = h * nu_0
     
     # Get source flux and visibility
-    flux = source.total_flux(observation.nu_0)
+    flux = source.total_flux(nu_0)
     
     # Calculate photon rate per frequency
     photon_rate_per_nu = (
@@ -153,7 +160,9 @@ def inverse_noise(source: ChaoticSource, observation: Observation) -> float:
 
 def fisher_matrix(
     source: ChaoticSource,
-    observations: List[Observation]
+    nu_0_list: List[float],
+    baseline_list: List[np.ndarray],
+    observation: Observation
 ) -> np.ndarray:
     """
     Calculate the Fisher matrix for the parameters of a chaotic source model
@@ -161,14 +170,20 @@ def fisher_matrix(
     
     The Fisher matrix is computed using the Jacobian of the squared visibility
     (V_squared) with respect to the source parameters and the inverse noise
-    (variance) of each measurement.
+    (variance) of each measurement. All measurements use the same telescope
+    and detector configuration but different frequencies and baselines.
     
     Parameters
     ----------
     source : ChaoticSource
         The chaotic source model with parameters to estimate.
-    observations : list of Observation
-        List of observational configurations.
+    nu_0_list : list of float
+        List of central frequencies in Hz for each measurement.
+    baseline_list : list of np.ndarray
+        List of baseline vectors in meters [Bx, By, Bz] for each measurement.
+        Must have the same length as nu_0_list.
+    observation : Observation
+        Telescope and detector configuration used for all measurements.
             
     Returns
     -------
@@ -176,6 +191,11 @@ def fisher_matrix(
         The Fisher matrix with shape (n_params, n_params), where n_params is
         the number of parameters in the source model. The order of parameters
         matches the keys from source.get_params().
+        
+    Raises
+    ------
+    ValueError
+        If nu_0_list and baseline_list have different lengths.
         
     Notes
     -----
@@ -186,12 +206,22 @@ def fisher_matrix(
     Example
     -------
     >>> disk = UniformDisk(flux_density=1e-26, radius=1e-8)
-    >>> observations = [
-    ...     Observation(nu_0=5e14, baseline=np.array([100, 0, 0]), integration_time=3600),
-    ...     Observation(nu_0=5e14, baseline=np.array([0, 100, 0]), integration_time=3600)
+    >>> nu_0_list = [5e14, 5e14, 6e14]
+    >>> baseline_list = [
+    ...     np.array([100, 0, 0]),
+    ...     np.array([0, 100, 0]),
+    ...     np.array([50, 50, 0])
     ... ]
-    >>> fisher = calculate_fisher_matrix(disk, observations)
+    >>> observation = Observation(integration_time=3600, telescope_area=1.0)
+    >>> fisher = fisher_matrix(disk, nu_0_list, baseline_list, observation)
     """
+    # Validate inputs
+    if len(nu_0_list) != len(baseline_list):
+        raise ValueError(
+            f"nu_0_list and baseline_list must have the same length. "
+            f"Got {len(nu_0_list)} frequencies and {len(baseline_list)} baselines."
+        )
+    
     # Get parameter names in consistent order
     params = list(source.get_params().keys())
     
@@ -219,9 +249,10 @@ def fisher_matrix(
     n_params = len(flattened_params)
     fisher = np.zeros((n_params, n_params))
     
-    for obs in observations:
+    # Iterate over each measurement configuration
+    for nu_0, baseline in zip(nu_0_list, baseline_list):
         # Compute Jacobian of V_squared with respect to parameters
-        jacobian_dict = source.V_squared_jacobian(nu_0=obs.nu_0, baseline=obs.baseline)
+        jacobian_dict = source.V_squared_jacobian(nu_0=nu_0, baseline=baseline)
         
         # Flatten the jacobian values in the same order as parameters
         jacobian = []
@@ -236,8 +267,8 @@ def fisher_matrix(
         
         jacobian = np.array(jacobian)
         
-        # Calculate inverse noise (standard deviation) for this observation
-        sigma = inverse_noise(source, obs)
+        # Calculate inverse noise (standard deviation) for this measurement
+        sigma = inverse_noise(source, nu_0, baseline, observation)
         
         # Avoid division by zero (if sigma is zero, skip this measurement)
         if sigma <= 0:
