@@ -15,6 +15,7 @@ def summary(source):
 
     # Calculate inverse noise for a baseline measurement half the resolution limit
     baseline = np.array([D_res/2, -D_res/1.5, 0.0])
+    baseline2 = np.array([D_res*1.1, -D_res*1.5, 0.0])
 
     # Observational parameters
     telescope_area = 1.0  # m²
@@ -23,7 +24,7 @@ def summary(source):
     throughput = 1.
 
     nus = jnp.array([nu_0, nu_0*1.1])
-    baselines = jnp.array([baseline, baseline*1.1])
+    baselines = jnp.array([baseline, baseline*1.1, baseline*0.9, baseline2, baseline2*0.9 ])
     
     print("")
     print("Source type:", type(source).__name__)  # Print source type
@@ -45,7 +46,7 @@ def summary(source):
     baseline_list = []
     
     # Add measurements at different baselines
-    for b in baselines[:2]:  # Use first two baselines
+    for b in baselines:  # Use first two baselines
         for nu in [nu_0]:  # Use base frequency
             nu_0_list.append(float(nu))
             baseline_list.append(np.array(b))
@@ -54,6 +55,9 @@ def summary(source):
     F = fisher_matrix(source, nu_0_list, baseline_list, obs)
     print(f"Fisher matrix shape: {F.shape}")
     print(f"Fisher matrix:\n{F}")
+    
+    # Calculate inverse noise for observations
+
     
     # Calculate parameter uncertainties if Fisher matrix is invertible
     try:

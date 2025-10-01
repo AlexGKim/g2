@@ -363,11 +363,17 @@ def reproduce_figure_7():
 def reproduce_figure_9():
     """
     Reproduce Figure 9: SNR maps for distance parameter measurements
-    Shows signal-to-noise ratio for distance measurements using SEDONA model
+    Shows signal-to-noise ratio for pixel_scale_rad measurements using SEDONA model
+    
+    Uses the correct formula: SNR = V_squared / sqrt(F^{-1}_{pixel_scale_rad,pixel_scale_rad})
+    where F^{-1} is the inverse Fisher matrix.
     """
     fig, axes = plt.subplots(2, 5, figsize=(15, 8))
     
     try:
+        # Import core module for Fisher matrix calculation
+        from g2.core import fisher_matrix, Observation
+        
         source, data_type = get_sedona_source()
         if source is None:
             raise Exception("Could not create source")
@@ -382,6 +388,14 @@ def reproduce_figure_9():
         epsilon = 0.39  # Total throughput
         T_obs = 3600.0  # 1 hour observation
         sigma_t = 13e-12  # 13 ps RMS timing jitter
+        
+        # Create observation object
+        observation = Observation(
+            integration_time=T_obs,
+            telescope_area=A,
+            throughput=epsilon,
+            detector_jitter=sigma_t
+        )
         
         # Set up u-v coordinate grid
         u_max = 10  # km
@@ -399,7 +413,7 @@ def reproduce_figure_9():
             nu_0 = source.frequency_grid[wave_idx]
             
             # Calculate SNR maps for two-pair and three-pair configurations
-            for config_idx, (ax, config_name) in enumerate([(axes[0,i], 'Two-pair'), 
+            for config_idx, (ax, config_name) in enumerate([(axes[0,i], 'Two-pair'),
                                                            (axes[1,i], 'Three-pair')]):
                 
                 SNR_map = np.zeros((n_points, n_points))
@@ -408,36 +422,111 @@ def reproduce_figure_9():
                     for k in range(n_points):
                         # Convert u-v to baseline
                         scale_factor = actual_wave / 5000.0
-                        baseline = np.array([U[j,k] * 1000 * scale_factor, 
+                        baseline = np.array([U[j,k] * 1000 * scale_factor,
                                            V[j,k] * 1000 * scale_factor, 0.0])
                         
                         try:
                             # Calculate V²
                             V_squared = source.V_squared(nu_0, baseline)
                             
-                            # Calculate photon flux
-                            flux = source.total_flux(nu_0)  # [W/m²/Hz]
-                            dGamma_dnu = epsilon * A * flux / (h * nu_0)  # [photons/s/Hz]
-                            
-                            # Calculate SNR (simplified from paper equations)
-                            if V_squared > 0 and dGamma_dnu > 0:
-                                sigma_V2_inv = dGamma_dnu * np.sqrt(T_obs / sigma_t) / np.sqrt(128 * np.pi)
+                            if V_squared > 0:
+                                # Define baseline configurations based on the paper description
+                                if config_idx == 0:  # Two-pair configuration (row 1)
+                                    # Two baselines perpendicular to each other, 30 min each
+                                    baseline_magnitude = np.linalg.norm(baseline[:2])
+                                    if baseline_magnitude > 0:
+                                        # Normalize and create perpendicular baselines
+                                        baseline_norm = baseline[:2] / baseline_magnitude
+                                        baseline_perp = np.array([-baseline_norm[1], baseline_norm[0]])
+                                        
+                                        baseline_list = [
+                                            np.array([baseline_norm[0] * baseline_magnitude, baseline_norm[1] * baseline_magnitude, 0.0]),
+                                            np.array([baseline_perp[0] * baseline_magnitude, baseline_perp[1] * baseline_magnitude, 0.0])
+                                        ]
+                                    else:
+                                        # For zero baseline, use orthogonal unit baselines
+                                        baseline_list = [
+                                            np.array([1.0, 0.0, 0.0]),
+                                            np.array([0.0, 1.0, 0.0])
+                                        ]
+                                    
+                                    # Each baseline gets 30 minutes (half the total observation time)
+                                    exposure_time_per_baseline = T_obs / 2.0
+                                    
+                                else:  # Three-pair configuration (row 2)
+                                    # Three baselines in right isosceles triangle: two perpendicular + one diagonal
+                                    baseline_magnitude = np.linalg.norm(baseline[:2])
+                                    if baseline_magnitude > 0:
+                                        baseline_norm = baseline[:2] / baseline_magnitude
+                                        baseline_perp = np.array([-baseline_norm[1], baseline_norm[0]])
+                                        # Diagonal baseline at 45° with √2 separation
+                                        baseline_diag = (baseline_norm + baseline_perp) / np.sqrt(2) * baseline_magnitude * np.sqrt(2)
+                                        
+                                        baseline_list = [
+                                            np.array([baseline_norm[0] * baseline_magnitude, baseline_norm[1] * baseline_magnitude, 0.0]),
+                                            np.array([baseline_perp[0] * baseline_magnitude, baseline_perp[1] * baseline_magnitude, 0.0]),
+                                            np.array([baseline_diag[0], baseline_diag[1], 0.0])
+                                        ]
+                                    else:
+                                        # For zero baseline, use the triangle configuration
+                                        baseline_list = [
+                                            np.array([1.0, 0.0, 0.0]),
+                                            np.array([0.0, 1.0, 0.0]),
+                                            np.array([np.sqrt(2), np.sqrt(2), 0.0])
+                                        ]
+                                    
+                                    # Each baseline gets 20 minutes (one third of total observation time)
+                                    exposure_time_per_baseline = T_obs / 3.0
                                 
-                                # Adjust for configuration
-                                if config_idx == 1:  # Three-pair configuration
-                                    sigma_V2_inv *= np.sqrt(1.5)  # Approximate improvement
+                                # Create modified observation object for each baseline
+                                baseline_observation = Observation(
+                                    integration_time=exposure_time_per_baseline,
+                                    telescope_area=observation.telescope_area,
+                                    throughput=observation.throughput,
+                                    detector_jitter=observation.detector_jitter
+                                )
                                 
-                                SNR = V_squared * sigma_V2_inv * 0.1  # Scale factor for visibility
-                                SNR_map[j,k] = SNR
+                                # Calculate total Fisher information from all baselines
+                                total_fisher_pixel_scale_rad = 0.0
+                                
+                                for bl in baseline_list:
+                                    # Get the Jacobian for this baseline
+                                    jacobian_dict = source.V_squared_jacobian(nu_0, bl)
+                                    
+                                    if 'pixel_scale_rad' in jacobian_dict:
+                                        # Get the derivative of V² with respect to pixel_scale_rad
+                                        dV2_dpixel_scale_rad = jacobian_dict['pixel_scale_rad']
+                                        
+                                        # Calculate the inverse noise for this baseline with appropriate exposure time
+                                        from g2.core import inverse_noise
+                                        inv_noise = inverse_noise(source, nu_0, bl, baseline_observation)
+                                        
+                                        # Add this baseline's contribution to Fisher information
+                                        fisher_contribution = (dV2_dpixel_scale_rad**2) * (inv_noise**2)
+                                        total_fisher_pixel_scale_rad += fisher_contribution
+                                
+                                if total_fisher_pixel_scale_rad > 0:
+                                    # The variance is the inverse of total Fisher information
+                                    variance_pixel_scale_rad = 1.0 / total_fisher_pixel_scale_rad
+                                    
+                                    # Calculate SNR using correct formula: V² / sqrt(variance)
+                                    SNR = V_squared / np.sqrt(variance_pixel_scale_rad)
+                                    SNR_map[j,k] = SNR
+                                else:
+                                    SNR_map[j,k] = 0.0
                             else:
                                 SNR_map[j,k] = 0.0
-                        except:
+                        except Exception as e:
                             SNR_map[j,k] = 0.0
                 
                 # Plot SNR map
-                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max], 
-                              origin='lower', cmap='viridis', 
-                              norm=LogNorm(vmin=1e-2, vmax=1.0))
+                # Use appropriate normalization for the new SNR calculation
+                vmax = np.percentile(SNR_map[SNR_map > 0], 95) if np.any(SNR_map > 0) else 1.0
+                vmin = np.percentile(SNR_map[SNR_map > 0], 5) if np.any(SNR_map > 0) else 1e-2
+                
+                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
+                              origin='lower', cmap='viridis',
+                              norm=LogNorm(vmin=max(vmin, 1e-3), vmax=vmax))
                 
                 ax.set_xlabel('u [km][λ/5000Å]')
                 if i == 0:
@@ -447,12 +536,15 @@ def reproduce_figure_9():
                     ax.set_title(f'λ = {actual_wave:.0f}Å')
                 
                 # Add configuration label
-                ax.text(0.05, 0.95, config_name, transform=ax.transAxes, 
+                ax.text(0.05, 0.95, config_name, transform=ax.transAxes,
                        verticalalignment='top', color='white', fontweight='bold')
                 
-                # Add colorbar for the last column
+                # Add colorbar for the last subplot in each row without affecting plot size
                 if i == len(target_wavelengths) - 1:
-                    plt.colorbar(im, ax=ax, label='SNR_s')
+                    from mpl_toolkits.axes_grid1 import make_axes_locatable
+                    divider = make_axes_locatable(ax)
+                    cax = divider.append_axes("right", size="5%", pad=0.05)
+                    plt.colorbar(im, cax=cax, label='SNR (pixel_scale_rad)')
         
         fig.suptitle('SNR Maps for Distance Measurements (Figure 9)', fontsize=14)
         
@@ -460,7 +552,7 @@ def reproduce_figure_9():
         for i in range(2):
             for j in range(5):
                 ax = axes[i,j]
-                ax.text(0.5, 0.5, f'Error\n{str(e)[:15]}...', 
+                ax.text(0.5, 0.5, f'Error\n{str(e)[:15]}...',
                        ha='center', va='center', transform=ax.transAxes, fontsize=8)
                 ax.set_title(f'Fig 9 ({i+1},{j+1})')
     

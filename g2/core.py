@@ -268,14 +268,10 @@ def fisher_matrix(
         jacobian = np.array(jacobian)
         
         # Calculate inverse noise (standard deviation) for this measurement
-        sigma = inverse_noise(source, nu_0, baseline, observation)
-        
-        # Avoid division by zero (if sigma is zero, skip this measurement)
-        if sigma <= 0:
-            continue
+        inverse_sigma = inverse_noise(source, nu_0, baseline, observation)
         
         # Compute contribution to Fisher matrix
-        inv_variance = 1.0 / (sigma ** 2)
+        inv_variance = inverse_sigma**2
         fisher += np.outer(jacobian, jacobian) * inv_variance
     
     return fisher
