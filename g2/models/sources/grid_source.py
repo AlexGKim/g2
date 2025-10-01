@@ -193,7 +193,7 @@ class GridSource(source.ChaoticSource):
         """
         if coord_type == 'direction':
             # For intensity: convert direction to pixel coordinates
-            pixel_scale = self.pixel_scale_m / params['distance']
+            pixel_scale = params['pixel_scale_rad']
             cos_phi_B = jnp.cos(params['phi_B'])
             sin_phi_B = jnp.sin(params['phi_B'])
             
@@ -220,8 +220,9 @@ class GridSource(source.ChaoticSource):
             ])
             
             # Convert to spatial frequency coordinates in cycles per meter
-            u_freq_meters = baseline_rotated[0] / wavelength / params['distance']
-            v_freq_meters = baseline_rotated[1] / wavelength / params['distance']
+            distance = self.pixel_scale_m / params['pixel_scale_rad']
+            u_freq_meters = baseline_rotated[0] / wavelength / distance
+            v_freq_meters = baseline_rotated[1] / wavelength / distance
             
             return u_freq_meters, v_freq_meters
         else:
@@ -411,8 +412,9 @@ class GridSource(source.ChaoticSource):
         ])
         
         # Convert baseline to spatial frequency coordinates
-        u_target = baseline_rotated[0] / (wavelength * params['distance'])
-        v_target = baseline_rotated[1] / (wavelength * params['distance'])
+        distance = self.pixel_scale_m / params['pixel_scale_rad']
+        u_target = baseline_rotated[0] / (wavelength * distance)
+        v_target = baseline_rotated[1] / (wavelength * distance)
         
         # Find nearest grid point
         u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
@@ -425,11 +427,12 @@ class GridSource(source.ChaoticSource):
         # Step 4: Calculate derivatives of (u,v) with respect to parameters
         jacobian = {}
         
-        # For distance: u = B_rotated/(λ*distance), so ∂u/∂distance = -u/distance
-        if 'distance' in params:
-            du_dd = -u_target / params['distance']
-            dv_dd = -v_target / params['distance']
-            jacobian['distance'] = dv2_du_at_point * du_dd + dv2_dv_at_point * dv_dd
+        # For pixel_scale_rad: u = B_rotated/(λ*distance) where distance = pixel_scale_m/pixel_scale_rad
+        # So u = B_rotated*pixel_scale_rad/(λ*pixel_scale_m), ∂u/∂pixel_scale_rad = u/pixel_scale_rad
+        if 'pixel_scale_rad' in params:
+            du_dpsr = u_target / params['pixel_scale_rad']
+            dv_dpsr = v_target / params['pixel_scale_rad']
+            jacobian['pixel_scale_rad'] = dv2_du_at_point * du_dpsr + dv2_dv_at_point * dv_dpsr
         
         # For phi_B: need to account for rotation
         if 'phi_B' in params:
@@ -440,8 +443,9 @@ class GridSource(source.ChaoticSource):
             d_brot_y_dphi = baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B
             
             # This gives us ∂u/∂phi_B and ∂v/∂phi_B
-            du_dphi = d_brot_x_dphi / (wavelength * params['distance'])
-            dv_dphi = d_brot_y_dphi / (wavelength * params['distance'])
+            distance = self.pixel_scale_m / params['pixel_scale_rad']
+            du_dphi = d_brot_x_dphi / (wavelength * distance)
+            dv_dphi = d_brot_y_dphi / (wavelength * distance)
             
             jacobian['phi_B'] = dv2_du_at_point * du_dphi + dv2_dv_at_point * dv_dphi
         
@@ -545,8 +549,7 @@ class GridSource(source.ChaoticSource):
             Dictionary containing source parameters
         """
         return {
-            # 'B': self.B,
-            'distance': self.distance,
+            'pixel_scale_rad':  self.pixel_scale_m / self.distance,
             'phi_B': self.phi_B
         }
     
@@ -567,8 +570,8 @@ class GridSource(source.ChaoticSource):
         if params is None:
             params = self.get_params()
         
-        # Calculate pixel scale in steradians based on current distance
-        pixel_scale_rad = self.pixel_scale_m / params['distance']  # radians per pixel
+        # Calculate pixel scale in steradians based on current parameters
+        pixel_scale_rad = params['pixel_scale_rad']  # radians per pixel
         pixel_area_sr = pixel_scale_rad**2  # steradians per pixel
         
         # Sum intensity over spatial dimensions and multiply by pixel area
