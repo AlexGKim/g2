@@ -56,9 +56,6 @@ def summary(source):
     print(f"Fisher matrix shape: {F.shape}")
     print(f"Fisher matrix:\n{F}")
     
-    # Calculate inverse noise for observations
-
-    
     # Calculate parameter uncertainties if Fisher matrix is invertible
     try:
         cov_matrix = np.linalg.inv(F)
