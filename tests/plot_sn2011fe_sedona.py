@@ -144,7 +144,7 @@ def plot_data_loading_and_initialization():
         ax2.grid(True, alpha=0.3)
         
         # Plot 3: Flux density in SI units
-        ax3.plot(source.frequency_grid / 1e14, source.specific_flux(), 'g-', linewidth=2)
+        ax3.plot(source.frequency_grid / 1e14, source.specific_flux_grid(), 'g-', linewidth=2)
         ax3.set_xlabel('Frequency (×10¹⁴ Hz)')
         ax3.set_ylabel('Flux Density (W/m²/Hz)')
         ax3.set_title('Flux Density vs Frequency')
@@ -515,7 +515,7 @@ def plot_chaotic_source_inheritance():
             baseline = np.array([B, 0.0, 0.0])
             try:
                 vis = source.V(nu_0, baseline)
-                flux = source.total_flux(nu_0)
+                flux = source.specific_flux(nu_0)
                 
                 # Simple SNR estimate based on visibility and flux
                 # This is a simplified calculation for demonstration
@@ -552,7 +552,7 @@ def plot_integration_tests():
         
         # Plot 1: Flux conservation test
         test_freq = 5e14
-        total_flux_direct = source.total_flux(test_freq)
+        total_flux_direct = source.specific_flux(test_freq)
         
         # Numerical integration over intensity
         # Use extent based on actual source size (pixel_scale * grid_size / 2)

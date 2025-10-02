@@ -141,7 +141,7 @@ def inverse_noise(
     photon_energy = h * nu_0
     
     # Get source flux and visibility
-    flux = source.total_flux(nu_0)
+    flux = source.specific_flux(nu_0)
     
     # Calculate photon rate per frequency
     photon_rate_per_nu = (

@@ -153,7 +153,7 @@ class PointSource(ChaoticSource):
             return flux / (np.pi * atol**2)  # Proper delta function approximation
         return 0.0
     
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """
         Calculate total flux (frequency-dependent for point source).
         
@@ -302,7 +302,7 @@ class UniformDisk(ChaoticSource):
         r = jnp.sqrt(n_hat[0]**2 + n_hat[1]**2)
         return self.surface_brightness if r <= self.radius else 0.0
     
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """
         Calculate total flux (constant for uniform disk).
         
@@ -526,7 +526,7 @@ class MultiPoint(ChaoticSource):
         
         return total_intensity
     
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """
         Calculate total flux from all point sources.
         

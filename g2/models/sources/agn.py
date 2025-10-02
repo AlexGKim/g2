@@ -180,7 +180,7 @@ class ShakuraSunyaevDisk(source.ChaoticSource):
         
         return self._disk_intensity(R_physical)
     
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """Calculate total flux by integrating over disk"""
         def integrand(R):
             return R * self._disk_intensity(R)
@@ -377,7 +377,7 @@ class BroadLineRegion(source.ChaoticSource):
         beta_val = self.beta_function(R_physical)
         return jnp.where(in_bounds & freq_match, beta_val, 0.0)
     
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """Calculate total flux for given observed frequency"""
         def integrand(R, phi):
             # Check velocity matching

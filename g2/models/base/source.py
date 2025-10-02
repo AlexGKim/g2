@@ -178,7 +178,7 @@ class AbstractSource(ABC):
         return self.V_fft(nu_0, baseline)
 
     @abstractmethod
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """
         Calculate total flux F_nu = ∫ I_nu d²n̂.
         

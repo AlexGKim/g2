@@ -76,7 +76,7 @@ def reproduce_figure_3():
         frequency_grid = np.array(source.frequency_grid)  # [Hz] - convert from jnp to np
         
         # Use the new specific_flux method which accounts for distance properly
-        flux_at_earth_mks = np.array(source.specific_flux())  # [W m⁻² Hz⁻¹] at Earth
+        flux_at_earth_mks = np.array(source.specific_flux_grid())  # [W m⁻² Hz⁻¹] at Earth
         
         # Convert from MKS to CGS: [W m⁻² Hz⁻¹] to [erg s⁻¹ cm⁻² Hz⁻¹]
         flux_at_earth_cgs = flux_at_earth_mks * 1e3  # W to erg/s: 1W = 1e7 erg/s, m² to cm²: 1m² = 1e4 cm²
@@ -400,14 +400,17 @@ def reproduce_figure_9():
         from astropy.cosmology import Planck18 as cosmo
         import astropy.units as units
         
-        # Parameters from sedona.ipynb
+        # Parameters from sedona.ipynb - exact match
         factor = 10
-        fluxshape = (64, 64)  # Approximate flux shape
+        # Get actual flux shape from source (approximating the sedona data)
+        fluxshape = (64, 64)  # This matches the typical SEDONA grid size
+        
+        # Exact calculations from sedona.ipynb
         Dwidth = 2 * 32000*3600*24*20 * factor * units.km
         DA = cosmo.angular_diameter_distance(0.004)
         Deltau = (DA/Dwidth).decompose()*5000e-10/1000   # at 5000A km
         
-        # Grid setup
+        # Grid setup - exact match to sedona.ipynb
         paddedarray_shape = (fluxshape[0]*factor, fluxshape[1]*factor)
         minx = paddedarray_shape[0]//2 - factor//3*fluxshape[0]
         maxx = paddedarray_shape[0]//2 + factor//3*fluxshape[0]
@@ -415,8 +418,9 @@ def reproduce_figure_9():
         emax = maxx - (minx + maxx)/2
         
         # Create coordinate grids for Fisher matrix calculation
-        # Use coarser grid for faster computation
-        n_points = min(20, maxx - minx)  # Much coarser grid
+        # Keep the same u,v range as sedona.ipynb but cap number of points at 20
+        full_range = maxx - minx  # The full range from sedona.ipynb
+        n_points = min(20, full_range)  # Cap at 20 points for efficiency
         
         for i, target_wave in enumerate(target_wavelengths):
             # Find closest wavelength and frequency
@@ -431,7 +435,7 @@ def reproduce_figure_9():
             
             # Get flux at this wavelength - use the integrated flux approach
             wavelengths = np.array(source.wavelength_grid)
-            flux_at_earth_mks = np.array(source.specific_flux())  # [W m⁻² Hz⁻¹] at Earth
+            flux_at_earth_mks = np.array(source.specific_flux_grid())  # [W m⁻² Hz⁻¹] at Earth
             flux_at_earth_cgs = flux_at_earth_mks * 1e3  # Convert to erg/s/cm²/Hz
             
             # Find flux at target wavelength
@@ -442,21 +446,33 @@ def reproduce_figure_9():
             # Calculate siginv following sedona.ipynb line 384/795
             siginv = dGammadnu * (128*np.pi)**(-0.25) * np.sqrt(3600/sigma_t)
             
-            # Initialize Fisher inverse matrices
-            Fsinv = np.zeros((n_points, n_points))
-            Fsinv45 = np.zeros((n_points, n_points))
+            # Initialize Fisher inverse matrices with the same size as sedona.ipynb
+            # but we'll only compute values at a subset of points
+            Fsinv = np.zeros((full_range, full_range))
+            Fsinv45 = np.zeros((full_range, full_range))
             
-            # Calculate Fisher matrices for each u,v point using coarser grid
-            for ui in range(n_points):
-                for vi in range(n_points):
-                    if ui == n_points//2 and vi == n_points//2:
+            # Create a sampling grid: sample at most 20x20 points from the full range
+            if full_range <= 20:
+                # If the full range is already small, use all points
+                sample_indices = list(range(full_range))
+            else:
+                # Sample 20 points evenly across the full range
+                sample_indices = [int(i * (full_range - 1) / 19) for i in range(20)]
+            
+            # Calculate Fisher matrices for sampled u,v points
+            for ui_idx, ui in enumerate(sample_indices):
+                for vi_idx, vi in enumerate(sample_indices):
+                    if ui == full_range//2 and vi == full_range//2:
                         continue  # Skip center point
                     
                     try:
-                        # Convert grid indices to baseline coordinates with proper scaling
-                        scale_factor = (maxx - minx) / n_points
-                        u_coord = (ui - n_points//2) * Deltau.value * 1000 * scale_factor
-                        v_coord = (vi - n_points//2) * Deltau.value * 1000 * scale_factor
+                        # Convert to actual grid coordinates (same as sedona.ipynb)
+                        actual_ui = minx + ui
+                        actual_vi = minx + vi
+                        
+                        # Convert to u,v coordinates in the same way as sedona.ipynb
+                        u_coord = (actual_ui - paddedarray_shape[0]//2) * Deltau.value * 1000
+                        v_coord = (actual_vi - paddedarray_shape[1]//2) * Deltau.value * 1000
                         baseline = np.array([u_coord, v_coord, 0.0])
                         
                         # Calculate Fisher matrix for the original baseline
@@ -518,6 +534,7 @@ def reproduce_figure_9():
             
             # Calculate SNR maps using sedona.ipynb formulas exactly
             # Two-pair configuration (row 1): siginv /2 * numpy.sqrt(1/Fsinv[minx:maxx,minx:maxx])
+            # Extract the slice [minx:maxx,minx:maxx] as in sedona.ipynb, but since we use 0-based indexing:
             SNR_map_2pair = siginv / 2 * np.sqrt(1 / np.maximum(Fsinv, 1e-20))
             
             # Three-pair configuration (row 2): siginv /3 * numpy.sqrt(1/Fsinv45[minx:maxx,minx:maxx])
