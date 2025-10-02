@@ -363,48 +363,60 @@ def reproduce_figure_7():
 def reproduce_figure_9():
     """
     Reproduce Figure 9: SNR maps for distance parameter measurements
-    Shows signal-to-noise ratio for pixel_scale_rad measurements using SEDONA model
+    Shows signal-to-noise ratio using the sedona.ipynb approach with Fisher matrix calculations.
     
-    Uses the correct formula: SNR = V_squared / sqrt(F^{-1}_{pixel_scale_rad,pixel_scale_rad})
-    where F^{-1} is the inverse Fisher matrix.
+    Uses the formulas from sedona.ipynb:
+    - Two-pair: siginv /2 * numpy.sqrt(1/Fsinv[minx:maxx,minx:maxx])
+    - Three-pair: siginv /3 * numpy.sqrt(1/Fsinv45[minx:maxx,minx:maxx])
     """
     fig, axes = plt.subplots(2, 5, figsize=(15, 8))
     
     try:
         # Import core module for Fisher matrix calculation
-        from g2.core import fisher_matrix, Observation
+        from g2.core import fisher_matrix, Observation, inverse_noise
         
         source, data_type = get_sedona_source()
         if source is None:
             raise Exception("Could not create source")
         
-        # Select wavelengths
-        target_wavelengths = [3697, 4698, 6128, 6190, 8746]  # Angstrom
+        # Select wavelengths (matching sedona.ipynb)
+        target_wavelengths = [3700, 4700, 6128, 6189, 8750]  # Angstrom
         
-        # Observational parameters (from paper)
-        z = 0.004  # Redshift
-        B_mag = 12.0  # Magnitude
-        A = np.pi * (10.0/2)**2  # Telescope area (10m diameter)
-        epsilon = 0.39  # Total throughput
-        T_obs = 3600.0  # 1 hour observation
+        # Observational parameters (from sedona.ipynb)
         sigma_t = 13e-12  # 13 ps RMS timing jitter
+        T_obs = 3600.0  # 1 hour observation
+        A = 88 * 100 * 100.0  # cm^2 (from sedona.ipynb line 49)
+        epsilon = 0.39  # Total throughput
         
         # Create observation object
         observation = Observation(
             integration_time=T_obs,
-            telescope_area=A,
+            telescope_area=A / 10000,  # Convert cm^2 to m^2
             throughput=epsilon,
             detector_jitter=sigma_t
         )
         
-        # Set up u-v coordinate grid
-        u_max = 10  # km
-        v_max = 10  # km
-        n_points = 20  # Reduced for performance
+        # Set up coordinate grid following sedona.ipynb approach
+        from astropy.cosmology import Planck18 as cosmo
+        import astropy.units as units
         
-        u_coords = np.linspace(-u_max, u_max, n_points)
-        v_coords = np.linspace(-v_max, v_max, n_points)
-        U, V = np.meshgrid(u_coords, v_coords)
+        # Parameters from sedona.ipynb
+        factor = 10
+        fluxshape = (64, 64)  # Approximate flux shape
+        Dwidth = 2 * 32000*3600*24*20 * factor * units.km
+        DA = cosmo.angular_diameter_distance(0.004)
+        Deltau = (DA/Dwidth).decompose()*5000e-10/1000   # at 5000A km
+        
+        # Grid setup
+        paddedarray_shape = (fluxshape[0]*factor, fluxshape[1]*factor)
+        minx = paddedarray_shape[0]//2 - factor//3*fluxshape[0]
+        maxx = paddedarray_shape[0]//2 + factor//3*fluxshape[0]
+        emin = minx - (minx + maxx)/2
+        emax = maxx - (minx + maxx)/2
+        
+        # Create coordinate grids for Fisher matrix calculation
+        # Use coarser grid for faster computation
+        n_points = min(20, maxx - minx)  # Much coarser grid
         
         for i, target_wave in enumerate(target_wavelengths):
             # Find closest wavelength and frequency
@@ -412,141 +424,146 @@ def reproduce_figure_9():
             actual_wave = source.wavelength_grid[wave_idx]
             nu_0 = source.frequency_grid[wave_idx]
             
-            # Calculate SNR maps for two-pair and three-pair configurations
-            for config_idx, (ax, config_name) in enumerate([(axes[0,i], 'Two-pair'),
-                                                           (axes[1,i], 'Three-pair')]):
-                
-                SNR_map = np.zeros((n_points, n_points))
-                
-                for j in range(n_points):
-                    for k in range(n_points):
-                        # Convert u-v to baseline
-                        scale_factor = actual_wave / 5000.0
-                        baseline = np.array([U[j,k] * 1000 * scale_factor,
-                                           V[j,k] * 1000 * scale_factor, 0.0])
+            # Calculate dGammadnu (photon rate) following sedona.ipynb
+            h = 6.626e-27  # erg s (CGS units)
+            c = 3e10  # cm/s
+            lcm = actual_wave / 1e8  # cm
+            
+            # Get flux at this wavelength - use the integrated flux approach
+            wavelengths = np.array(source.wavelength_grid)
+            flux_at_earth_mks = np.array(source.specific_flux())  # [W m⁻² Hz⁻¹] at Earth
+            flux_at_earth_cgs = flux_at_earth_mks * 1e3  # Convert to erg/s/cm²/Hz
+            
+            # Find flux at target wavelength
+            flux_cgs = flux_at_earth_cgs[wave_idx]
+            
+            dGammadnu = A * flux_cgs * actual_wave / h / c / c * lcm * lcm
+            
+            # Calculate siginv following sedona.ipynb line 384/795
+            siginv = dGammadnu * (128*np.pi)**(-0.25) * np.sqrt(3600/sigma_t)
+            
+            # Initialize Fisher inverse matrices
+            Fsinv = np.zeros((n_points, n_points))
+            Fsinv45 = np.zeros((n_points, n_points))
+            
+            # Calculate Fisher matrices for each u,v point using coarser grid
+            for ui in range(n_points):
+                for vi in range(n_points):
+                    if ui == n_points//2 and vi == n_points//2:
+                        continue  # Skip center point
+                    
+                    try:
+                        # Convert grid indices to baseline coordinates with proper scaling
+                        scale_factor = (maxx - minx) / n_points
+                        u_coord = (ui - n_points//2) * Deltau.value * 1000 * scale_factor
+                        v_coord = (vi - n_points//2) * Deltau.value * 1000 * scale_factor
+                        baseline = np.array([u_coord, v_coord, 0.0])
                         
-                        try:
-                            # Calculate V²
-                            V_squared = source.V_squared(nu_0, baseline)
+                        # Calculate Fisher matrix for the original baseline
+                        fisher_orig = fisher_matrix(source, [nu_0], [baseline], observation)
+                        
+                        if fisher_orig.shape[0] >= 2:  # Need at least 2x2 matrix
+                            # Extract F00, F01, F11 components (assuming 2x2 Fisher matrix)
+                            F00 = fisher_orig[0, 0]
+                            F01 = fisher_orig[0, 1]
+                            F11 = fisher_orig[1, 1]
                             
-                            if V_squared > 0:
-                                # Define baseline configurations based on the paper description
-                                if config_idx == 0:  # Two-pair configuration (row 1)
-                                    # Two baselines perpendicular to each other, 30 min each
-                                    baseline_magnitude = np.linalg.norm(baseline[:2])
-                                    if baseline_magnitude > 0:
-                                        # Normalize and create perpendicular baselines
-                                        baseline_norm = baseline[:2] / baseline_magnitude
-                                        baseline_perp = np.array([-baseline_norm[1], baseline_norm[0]])
-                                        
-                                        baseline_list = [
-                                            np.array([baseline_norm[0] * baseline_magnitude, baseline_norm[1] * baseline_magnitude, 0.0]),
-                                            np.array([baseline_perp[0] * baseline_magnitude, baseline_perp[1] * baseline_magnitude, 0.0])
-                                        ]
-                                    else:
-                                        # For zero baseline, use orthogonal unit baselines
-                                        baseline_list = [
-                                            np.array([1.0, 0.0, 0.0]),
-                                            np.array([0.0, 1.0, 0.0])
-                                        ]
-                                    
-                                    # Each baseline gets 30 minutes (half the total observation time)
-                                    exposure_time_per_baseline = T_obs / 2.0
-                                    
-                                else:  # Three-pair configuration (row 2)
-                                    # Three baselines in right isosceles triangle: two perpendicular + one diagonal
-                                    baseline_magnitude = np.linalg.norm(baseline[:2])
-                                    if baseline_magnitude > 0:
-                                        baseline_norm = baseline[:2] / baseline_magnitude
-                                        baseline_perp = np.array([-baseline_norm[1], baseline_norm[0]])
-                                        # Diagonal baseline at 45° with √2 separation
-                                        baseline_diag = (baseline_norm + baseline_perp) / np.sqrt(2) * baseline_magnitude * np.sqrt(2)
-                                        
-                                        baseline_list = [
-                                            np.array([baseline_norm[0] * baseline_magnitude, baseline_norm[1] * baseline_magnitude, 0.0]),
-                                            np.array([baseline_perp[0] * baseline_magnitude, baseline_perp[1] * baseline_magnitude, 0.0]),
-                                            np.array([baseline_diag[0], baseline_diag[1], 0.0])
-                                        ]
-                                    else:
-                                        # For zero baseline, use the triangle configuration
-                                        baseline_list = [
-                                            np.array([1.0, 0.0, 0.0]),
-                                            np.array([0.0, 1.0, 0.0]),
-                                            np.array([np.sqrt(2), np.sqrt(2), 0.0])
-                                        ]
-                                    
-                                    # Each baseline gets 20 minutes (one third of total observation time)
-                                    exposure_time_per_baseline = T_obs / 3.0
+                            # For 90° rotation: (u,v) -> (-v,u) following sedona.ipynb rot90
+                            baseline_90 = np.array([-v_coord, u_coord, 0.0])
+                            fisher_90 = fisher_matrix(source, [nu_0], [baseline_90], observation)
+                            
+                            if fisher_90.shape[0] >= 2:
+                                F00rot = fisher_90[0, 0]
+                                F01rot = fisher_90[0, 1]
+                                F11rot = fisher_90[1, 1]
                                 
-                                # Create modified observation object for each baseline
-                                baseline_observation = Observation(
-                                    integration_time=exposure_time_per_baseline,
-                                    telescope_area=observation.telescope_area,
-                                    throughput=observation.throughput,
-                                    detector_jitter=observation.detector_jitter
-                                )
+                                # Two-pair configuration: combine original + 90° rotated
+                                # Following sedona.ipynb: [[F00+F00rot, F01+F01rot], [F01+F01rot, F11+F11rot]]
+                                fisher_2pair = np.array([
+                                    [F00 + F00rot, F01 + F01rot],
+                                    [F01 + F01rot, F11 + F11rot]
+                                ])
                                 
-                                # Calculate total Fisher information from all baselines
-                                total_fisher_pixel_scale_rad = 0.0
+                                if np.linalg.det(fisher_2pair) > 1e-20:
+                                    fisher_inv_2 = np.linalg.inv(fisher_2pair)
+                                    Fsinv[ui, vi] = fisher_inv_2[0, 0]
                                 
-                                for bl in baseline_list:
-                                    # Get the Jacobian for this baseline
-                                    jacobian_dict = source.V_squared_jacobian(nu_0, bl)
+                                # For 45° rotation: following sedona.ipynb approach
+                                # This is more complex - use the same baseline but with 45° Fisher matrix
+                                baseline_45 = np.array([
+                                    (u_coord - v_coord) / np.sqrt(2),
+                                    (u_coord + v_coord) / np.sqrt(2),
+                                    0.0
+                                ])
+                                fisher_45 = fisher_matrix(source, [nu_0], [baseline_45], observation)
+                                
+                                if fisher_45.shape[0] >= 2:
+                                    F00rot45 = fisher_45[0, 0]
+                                    F01rot45 = fisher_45[0, 1]
+                                    F11rot45 = fisher_45[1, 1]
                                     
-                                    if 'pixel_scale_rad' in jacobian_dict:
-                                        # Get the derivative of V² with respect to pixel_scale_rad
-                                        dV2_dpixel_scale_rad = jacobian_dict['pixel_scale_rad']
-                                        
-                                        # Calculate the inverse noise for this baseline with appropriate exposure time
-                                        from g2.core import inverse_noise
-                                        inv_noise = inverse_noise(source, nu_0, bl, baseline_observation)
-                                        
-                                        # Add this baseline's contribution to Fisher information
-                                        fisher_contribution = (dV2_dpixel_scale_rad**2) * (inv_noise**2)
-                                        total_fisher_pixel_scale_rad += fisher_contribution
-                                
-                                if total_fisher_pixel_scale_rad > 0:
-                                    # The variance is the inverse of total Fisher information
-                                    variance_pixel_scale_rad = 1.0 / total_fisher_pixel_scale_rad
+                                    # Three-pair configuration: combine original + 90° + 45° rotated
+                                    # Following sedona.ipynb: [[F00+F00rot+F00rot45, F01+F01rot+F01rot45], [...]]
+                                    fisher_3pair = np.array([
+                                        [F00 + F00rot + F00rot45, F01 + F01rot + F01rot45],
+                                        [F01 + F01rot + F01rot45, F11 + F11rot + F11rot45]
+                                    ])
                                     
-                                    # Calculate SNR using correct formula: V² / sqrt(variance)
-                                    SNR = V_squared / np.sqrt(variance_pixel_scale_rad)
-                                    SNR_map[j,k] = SNR
-                                else:
-                                    SNR_map[j,k] = 0.0
-                            else:
-                                SNR_map[j,k] = 0.0
-                        except Exception as e:
-                            SNR_map[j,k] = 0.0
+                                    if np.linalg.det(fisher_3pair) > 1e-20:
+                                        fisher_inv_3 = np.linalg.inv(fisher_3pair)
+                                        Fsinv45[ui, vi] = fisher_inv_3[0, 0]
+                        
+                    except Exception as e:
+                        pass  # Skip problematic points
+            
+            # Calculate SNR maps using sedona.ipynb formulas exactly
+            # Two-pair configuration (row 1): siginv /2 * numpy.sqrt(1/Fsinv[minx:maxx,minx:maxx])
+            SNR_map_2pair = siginv / 2 * np.sqrt(1 / np.maximum(Fsinv, 1e-20))
+            
+            # Three-pair configuration (row 2): siginv /3 * numpy.sqrt(1/Fsinv45[minx:maxx,minx:maxx])
+            SNR_map_3pair = siginv / 3 * np.sqrt(1 / np.maximum(Fsinv45, 1e-20))
+            
+            # Plot two-pair configuration (top row) - matching sedona.ipynb exactly
+            ax1 = axes[0, i]
+            im1 = ax1.imshow(SNR_map_2pair,
+                           norm=LogNorm(vmin=0.01, vmax=0.5),  # Exact values from sedona.ipynb
+                           extent=[emin*Deltau.value, emax*Deltau.value,
+                                  emin*Deltau.value, emax*Deltau.value],  # Exact extent from sedona.ipynb
+                           origin='lower', cmap='viridis')
+            
+            if i == 0:
+                ax1.set_ylabel('v [km][λ/5000Å]')
+            ax1.set_title(f'λ = {actual_wave:.0f}Å')
+            ax1.text(0.05, 0.95, 'Two-pair', transform=ax1.transAxes,
+                    verticalalignment='top', color='white', fontweight='bold')
+            
+            # Plot three-pair configuration (bottom row) - matching sedona.ipynb exactly
+            ax2 = axes[1, i]
+            im2 = ax2.imshow(SNR_map_3pair,
+                           norm=LogNorm(vmin=0.01, vmax=0.5),  # Exact values from sedona.ipynb
+                           extent=[emin*Deltau.value, emax*Deltau.value,
+                                  emin*Deltau.value, emax*Deltau.value],  # Exact extent from sedona.ipynb
+                           origin='lower', cmap='viridis')
+            
+            if i == 0:
+                ax2.set_ylabel('v [km][λ/5000Å]')
+            ax2.set_xlabel('u [km][λ/5000Å]')
+            ax2.text(0.05, 0.95, 'Three-pair', transform=ax2.transAxes,
+                    verticalalignment='top', color='white', fontweight='bold')
+            
+            # Add colorbar for the last subplot in each row
+            if i == len(target_wavelengths) - 1:
+                from mpl_toolkits.axes_grid1 import make_axes_locatable
                 
-                # Plot SNR map
-                # Use appropriate normalization for the new SNR calculation
-                vmax = np.percentile(SNR_map[SNR_map > 0], 95) if np.any(SNR_map > 0) else 1.0
-                vmin = np.percentile(SNR_map[SNR_map > 0], 5) if np.any(SNR_map > 0) else 1e-2
+                divider1 = make_axes_locatable(ax1)
+                cax1 = divider1.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(im1, cax=cax1, label='SNR_s')
                 
-                im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
-                              origin='lower', cmap='viridis',
-                              norm=LogNorm(vmin=max(vmin, 1e-3), vmax=vmax))
-                
-                ax.set_xlabel('u [km][λ/5000Å]')
-                if i == 0:
-                    ax.set_ylabel('v [km][λ/5000Å]')
-                
-                if config_idx == 0:
-                    ax.set_title(f'λ = {actual_wave:.0f}Å')
-                
-                # Add configuration label
-                ax.text(0.05, 0.95, config_name, transform=ax.transAxes,
-                       verticalalignment='top', color='white', fontweight='bold')
-                
-                # Add colorbar for the last subplot in each row without affecting plot size
-                if i == len(target_wavelengths) - 1:
-                    from mpl_toolkits.axes_grid1 import make_axes_locatable
-                    divider = make_axes_locatable(ax)
-                    cax = divider.append_axes("right", size="5%", pad=0.05)
-                    plt.colorbar(im, cax=cax, label='SNR (pixel_scale_rad)')
+                divider2 = make_axes_locatable(ax2)
+                cax2 = divider2.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(im2, cax=cax2, label='SNR_s')
         
-        fig.suptitle('SNR Maps for Distance Measurements (Figure 9)', fontsize=14)
+        fig.suptitle('SNR Maps using Fisher Matrix (Figure 9)', fontsize=14)
         
     except Exception as e:
         for i in range(2):
