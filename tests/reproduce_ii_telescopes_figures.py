@@ -139,7 +139,7 @@ def reproduce_figure_4():
             actual_wave = source.wavelength_grid[wave_idx]
             
             # Get the 2D intensity map for this wavelength
-            intensity_map = source.intensity_data[wave_idx, :, :]
+            intensity_map = source.intensity_grid[wave_idx, :, :]
             
             # Convert pixel coordinates to physical coordinates (10^10 km)
             pixel_scale_km = source.pixel_scale_m / 1e13  # Convert m to 10^10 km

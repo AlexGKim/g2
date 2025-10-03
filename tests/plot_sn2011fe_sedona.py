@@ -134,12 +134,22 @@ def plot_data_loading_and_initialization():
         ax1.grid(True, alpha=0.3)
         
         # Plot 2: Photon flux density per frequency
-        specific_photon_flux = source.specific_photon_flux()
-        ax2.plot(source.wavelength_grid, specific_photon_flux, 'r-', linewidth=2, label='SEDONA')
+        flux_at_earth_mks = np.array(source.specific_flux())  # [W m⁻² Hz⁻¹] at Earth
+        
+        # Convert from MKS to CGS: [W m⁻² Hz⁻¹] to [erg s⁻¹ cm⁻² Hz⁻¹]
+        flux_at_earth_cgs = flux_at_earth_mks * 1e3  # W to erg/s: 1W = 1e7 erg/s, m² to cm²: 1m² = 1e4 cm²
+        # So: 1e7 / 1e4 = 1e3
+        
+        # Convert to photon flux density [photons/s/cm²/Hz]
+        h = 6.62607015e-27  # erg⋅s (CGS units)
+        
+        photon_flux_cgs = flux_at_earth_cgs / (h * source.frequency_grid)  # [photons/s/cm²/Hz]
+
+        ax2.plot(source.wavelength_grid, photon_flux_cgs, 'r-', linewidth=2, label='SEDONA')
         ax2.set_xlabel('Wavelength (Å)')
         ax2.set_ylabel('n_ν [s⁻¹ cm⁻² Hz⁻¹]')
         ax2.set_title(f'Photon Flux Density per Frequency\n({data_type})')
-        ax2.set_ylim((0, np.max(specific_photon_flux[np.logical_and(
+        ax2.set_ylim((0, np.max(photon_flux_cgs[np.logical_and(
             source.wavelength_grid > 4000, source.wavelength_grid < 8000)]) * 1.1))
         ax2.set_xlim((3300, 10000))
         ax2.grid(True, alpha=0.3)
