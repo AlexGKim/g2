@@ -207,7 +207,7 @@ def reproduce_figure_6():
             nu_0 = source.frequency_grid[wave_idx]
             wavelength_m = actual_wave * 1e-10  # Convert Å to m
             
-            # Create u-v grid in terms of baseline lengths
+            # Create u-v grid in terms o f baseline lengths
             # Convert zeta to baseline: B = ζλ/(πθ)
             baseline_lengths = zeta_coords * wavelength_m / (np.pi * theta_estimate)
             

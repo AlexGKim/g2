@@ -97,7 +97,7 @@ class GridSource(source.ChaoticSource):
             raise ValueError(f"Wavelength grid length {len(self.wavelength_grid)} doesn't match flux grid wavelength dimension {self.n_wavelengths}")
         
         # Calculate specific flux once for efficiency
-        specific_flux_values = self.specific_flux()
+        # specific_flux_values = self.specific_flux()
         
         # Keep old total_flux_spectrum for backward compatibility in plotting
         # self.total_flux_spectrum = specific_flux_values * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
@@ -121,10 +121,10 @@ class GridSource(source.ChaoticSource):
         """
         return self.pixel_scale_m / self.distance
 
-    def specific_photon_flux(self):
-             # Calculate total_photon_spectrum for backward compatibility
-        h = 6.62607015e-34  # Planck constant
-        return   self.specific_flux() / (h * self.frequency_grid)  # [photons/s/m²/Hz]
+    # def specific_photon_flux(self):
+    #          # Calculate total_photon_spectrum for backward compatibility
+    #     h = 6.62607015e-34  # Planck constant
+    #     return   self.specific_flux() / (h * self.frequency_grid)  # [photons/s/m²/Hz]
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, params=None) -> Union[float, np.ndarray]:
         """
@@ -198,7 +198,7 @@ class GridSource(source.ChaoticSource):
         """
         if coord_type == 'direction':
             # For intensity: convert direction to pixel coordinates
-            pixel_scale = params['pixel_scale_rad']
+            pixel_scale = self.pixel_scale_m/ (params['s']*self.distance) # params['pixel_scale_rad']
             cos_phi_B = jnp.cos(params['phi_B'])
             sin_phi_B = jnp.sin(params['phi_B'])
             
@@ -222,10 +222,12 @@ class GridSource(source.ChaoticSource):
             baseline_rotated = jnp.array([
                 coords[0] * cos_phi_B + coords[1] * sin_phi_B,
                 -coords[0] * sin_phi_B + coords[1] * cos_phi_B
-            ])
+            ]) / params['s']
             
             # Convert to spatial frequency coordinates in cycles per meter
-            distance = self.pixel_scale_m / params['pixel_scale_rad']
+            # distance = self.pixel_scale_m / params['pixel_scale_rad']
+            distance = self.distance * params['s']
+
             u_freq_meters = baseline_rotated[0] / wavelength / distance
             v_freq_meters = baseline_rotated[1] / wavelength / distance
             
@@ -279,45 +281,6 @@ class GridSource(source.ChaoticSource):
             return grid_data[v_idx, u_idx]
         else:
             raise ValueError(f"Unknown coord_type: {coord_type}")
-    # def _interpolate_grid(self, grid_data: jnp.ndarray, u_target: float, v_target: float,
-    #                      coord_type: str = 'pixel') -> Union[float, complex]:
-    #     """
-    #     Common grid interpolation for both intensity and FFT data.
-        
-    #     Parameters
-    #     ----------
-    #     grid_data : jnp.ndarray
-    #         2D grid data to interpolate from
-    #     u_target, v_target : float
-    #         Target coordinates
-    #     coord_type : str
-    #         Either 'pixel' (for intensity) or 'fft' (for visibility FFT)
-            
-    #     Returns
-    #     -------
-    #     Union[float, complex]
-    #         Interpolated value
-    #     """
-    #     if coord_type == 'pixel':
-    #         # For intensity: use pixel coordinates directly
-    #         if (0 <= u_target < self.nx and 0 <= v_target < self.ny):
-    #             x0, x1 = int(u_target), min(int(u_target) + 1, self.nx - 1)
-    #             y0, y1 = int(v_target), min(int(v_target) + 1, self.ny - 1)
-    #             return grid_data[y0, x0]
-    #         else:
-    #             return 0.0
-                
-    #     elif coord_type == 'fft':
-    #         # For FFT: find closest grid point in spatial frequency space
-    #         u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
-    #         v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
-            
-    #         u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
-    #         v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
-            
-    #         return grid_data[v_idx, u_idx]
-    #     else:
-    #         raise ValueError(f"Unknown coord_type: {coord_type}")
 
 
 
@@ -360,7 +323,10 @@ class GridSource(source.ChaoticSource):
     
     def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
         """
-        Calculate the Jacobian of |V|² with respect to source parameters.
+        Calculate the Jacobian of |V|² with respect to source parameters using the sedona algorithm.
+        
+        This implementation follows the algorithm from sedona.ipynb that calculates Fisher matrix
+        elements F00, F01, F02 using gamma2 (which corresponds to V_squared).
         
         Parameters
         ----------
@@ -386,163 +352,82 @@ class GridSource(source.ChaoticSource):
         # Extract perpendicular baseline components
         baseline_perp = baseline[:2]
         
-        # Step 1: Calculate |V|² on the native grid
-        intensity_fft = _compute_map_fft(self.intensity_grid[freq_idx, :, :])
-        v_squared_grid = jnp.abs(intensity_fft)**2
+        # Get normalized flux data (following sedona algorithm)
+        flux_norm = self.intensity_grid[freq_idx, :, :]
+        flux_norm = flux_norm / jnp.sum(flux_norm)
         
-        # Step 2: Calculate the gradient of |V|² in spatial frequency space
-        # These are ∂|V|²/∂u and ∂|V|²/∂v where u,v are in cycles/meter
-        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))  # cycles/meter
-        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))  # cycles/meter
+        # Create padded array (without padding as requested)
+        paddedarray = flux_norm
         
-        # Compute spacing in spatial frequency
-        du = u_coords[1] - u_coords[0] if len(u_coords) > 1 else 1.0
-        dv = v_coords[1] - v_coords[0] if len(v_coords) > 1 else 1.0
+        # Calculate gamma (FFT of normalized intensity)
+        gamma = jax.numpy.fft.fft2(paddedarray)
         
-        # Gradient with respect to spatial frequency coordinates (not grid indices!)
-        dv2_du = jnp.gradient(v_squared_grid, du, axis=1)  # ∂|V|²/∂u
-        dv2_dv = jnp.gradient(v_squared_grid, dv, axis=0)  # ∂|V|²/∂v
+        # Calculate coordinate grids for derivatives (following sedona algorithm)
+        # theta represents pixel coordinates relative to center
+        theta_x = jnp.arange(paddedarray.shape[1]) - paddedarray.shape[1] // 2 + 0.5
+        theta_y = jnp.arange(paddedarray.shape[0]) - paddedarray.shape[0] // 2 + 0.5
         
-        # Step 3: Calculate the current (u,v) point for this baseline
-        c = 2.99792458e8
-        wavelength = c / nu_0
+        # Calculate derivatives of gamma with respect to u and v coordinates
+        # Following sedona: dgammau = -2j*pi * fft2(paddedarray * theta[:,None])
+        dgammau = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_y[:, None])
+        dgammav = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_x[None, :])
         
-        cos_phi_B = jnp.cos(params['phi_B'])
-        sin_phi_B = jnp.sin(params['phi_B'])
+        # Get frequency coordinates for spatial frequency space
+        u = jax.numpy.fft.fftfreq(paddedarray.shape[0])
+        v = jax.numpy.fft.fftfreq(paddedarray.shape[1])
         
-        # Apply rotation to baseline
-        baseline_rotated = jnp.array([
-            baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B,
-            -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
-        ])
+        # Calculate derivatives in parameter space (following sedona algorithm)
+        # dgammas corresponds to derivative with respect to size parameter
+        # dgammaphi corresponds to derivative with respect to rotation parameter
+        dgammas = -(u[:, None] * dgammau + v[None, :] * dgammav) / params['s']
+        dgammaphi = -v[None, :] * dgammau + u[:, None] * dgammav
+
+        jacobian_grid = {}
+
+        if 's' in params:
+            # Use F00 for size parameter derivative (dgammas corresponds to size changes)
+            jacobian_grid['s'] = jnp.conjugate(gamma) * dgammas + gamma * jnp.conjugate(dgammas)
         
-        # Convert baseline to spatial frequency coordinates
-        distance = self.pixel_scale_m / params['pixel_scale_rad']
-        u_target = baseline_rotated[0] / (wavelength * distance)
-        v_target = baseline_rotated[1] / (wavelength * distance)
+        # For phi_B parameter (corresponds to rotation parameter "phi" in sedona)
+        if 'phi_B' in params:
+            # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
+            jacobian_grid['phi_B'] = jnp.conjugate(gamma) * dgammaphi + gamma * jnp.conjugate(dgammaphi)
         
-        # Find nearest grid point
-        u_idx = jnp.argmin(jnp.abs(u_coords - u_target))
-        v_idx = jnp.argmin(jnp.abs(v_coords - v_target))
+        # # Calculate Fisher matrix elements (following sedona algorithm)
+        # F00 = jnp.abs(2 * gamma.conjugate() * dgammas) ** 2
+        # F01 = jnp.abs(2 * gamma.conjugate() * dgammas) * jnp.abs(2 * gamma.conjugate() * dgammaphi)
+        # F11 = jnp.abs(2 * gamma.conjugate() * dgammaphi) ** 2
         
-        # Get gradient values at this point
-        dv2_du_at_point = dv2_du[v_idx, u_idx]
-        dv2_dv_at_point = dv2_dv[v_idx, u_idx]
+        # # Apply fftshift to center the arrays
+        # F00 = jnp.fft.fftshift(F00)
+        # F01 = jnp.fft.fftshift(F01)
+        # F11 = jnp.fft.fftshift(F11)
         
-        # Step 4: Calculate derivatives of (u,v) with respect to parameters
+        # Use common coordinate transformation and interpolation methods
+        u_target, v_target = self._transform_coordinates(baseline_perp, params, 'baseline', nu_0)
+        
+        # # Get Fisher matrix values at this point
+        # F00_at_point = F00[v_idx, u_idx]
+        # F01_at_point = F01[v_idx, u_idx]
+        # F11_at_point = F11[v_idx, u_idx]
+        
+        # Calculate Jacobian using Fisher matrix elements
+        # Based on sedona algorithm: F00 corresponds to size parameter, F11 to rotation parameter
         jacobian = {}
         
-        # For pixel_scale_rad: u = B_rotated/(λ*distance) where distance = pixel_scale_m/pixel_scale_rad
-        # So u = B_rotated*pixel_scale_rad/(λ*pixel_scale_m), ∂u/∂pixel_scale_rad = u/pixel_scale_rad
-        if 'pixel_scale_rad' in params:
-            du_dpsr = u_target / params['pixel_scale_rad']
-            dv_dpsr = v_target / params['pixel_scale_rad']
-            jacobian['pixel_scale_rad'] = dv2_du_at_point * du_dpsr + dv2_dv_at_point * dv_dpsr
+        # For pixel_scale_rad parameter (corresponds to size parameter "s" in sedona)
+        if 's' in params:
+            # Use F00 for size parameter derivative (dgammas corresponds to size changes)
+            jacobian['s'] = self._interpolate_grid(jacobian_grid['s'], u_target, v_target, 'fft')
         
-        # For phi_B: need to account for rotation
+        # For phi_B parameter (corresponds to rotation parameter "phi" in sedona)
         if 'phi_B' in params:
-            # When phi_B changes, the rotated baseline changes
-            # ∂(B_rot_x)/∂phi_B = -Bx*sin(phi_B) + By*cos(phi_B) = -B_rot_y
-            # ∂(B_rot_y)/∂phi_B = -Bx*cos(phi_B) - By*sin(phi_B) = B_rot_x
-            d_brot_x_dphi = -baseline_perp[0] * sin_phi_B + baseline_perp[1] * cos_phi_B
-            d_brot_y_dphi = baseline_perp[0] * cos_phi_B + baseline_perp[1] * sin_phi_B
-            
-            # This gives us ∂u/∂phi_B and ∂v/∂phi_B
-            distance = self.pixel_scale_m / params['pixel_scale_rad']
-            du_dphi = d_brot_x_dphi / (wavelength * distance)
-            dv_dphi = d_brot_y_dphi / (wavelength * distance)
-            
-            jacobian['phi_B'] = dv2_du_at_point * du_dphi + dv2_dv_at_point * dv_dphi
+            # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
+            jacobian['phi_B'] = self._interpolate_grid(jacobian_grid['phi_B'], u_target, v_target, 'fft')
         
         return jacobian
     
 
-    # def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
-    #     """
-    #     Calculate the Jacobian of |V|² with respect to source parameters.
-        
-    #     Parameters
-    #     ----------
-    #     nu_0 : float
-    #         Central frequency in Hz
-    #     baseline : array_like, shape (3,)
-    #         Baseline vector in meters [Bx, By, Bz]
-    #     params : dict, optional
-    #         Source parameters. If None, uses current source parameters
-            
-    #     Returns
-    #     -------
-    #     jacobian : dict
-    #         Dictionary with same keys as params, containing the partial
-    #         derivatives of |V|² with respect to each parameter
-    #     """
-    #     if params is None:
-    #         params = self.get_params()
-        
-    #     # Find the frequency index
-    #     freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
-        
-    #     # Extract perpendicular baseline components
-    #     baseline_perp = baseline[:2]
-        
-    #     # Define a function that computes |V|² with parameter dependence
-    #     def V_squared_with_params(params_dict):
-    #         # Make intensity data depend on parameters
-    #         distance_scale = params_dict['distance'] / self.distance  # Relative distance change
-            
-    #         # Scale the intensity data based on distance (inverse square law for flux)
-    #         scaled_intensity = self.intensity_data[freq_idx, :, :] / (distance_scale**2)
-            
-    #         # Apply magnitude scaling based on B parameter
-    #         B_scale = 10**((self.B - params_dict['B']) / 2.5)  # Magnitude scaling
-    #         scaled_intensity = scaled_intensity * B_scale
-            
-    #         # Compute FFT of the scaled intensity (this gives V on the grid)
-    #         intensity_fft = _compute_map_fft(scaled_intensity)
-            
-    #         # Get grid coordinates in spatial frequency space
-    #         u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m))
-    #         v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m))
-            
-    #         # Transform grid coordinates to angular space using parameters
-    #         c = 2.99792458e8
-    #         wavelength = c / nu_0
-            
-    #         # Apply parameter-dependent coordinate transformation to the entire grid
-    #         cos_phi_B = jnp.cos(params_dict['phi_B'])
-    #         sin_phi_B = jnp.sin(params_dict['phi_B'])
-            
-    #         # Transform each grid point from spatial frequency to baseline space
-    #         # This is the inverse of the baseline-to-spatial-frequency transformation
-    #         u_baseline_space = u_coords * wavelength * params_dict['distance']
-    #         v_baseline_space = v_coords * wavelength * params_dict['distance']
-            
-    #         # Apply inverse rotation to get baseline coordinates
-    #         u_baseline_rotated = u_baseline_space * cos_phi_B - v_baseline_space * sin_phi_B
-    #         v_baseline_rotated = u_baseline_space * sin_phi_B + v_baseline_space * cos_phi_B
-            
-    #         # Find the grid point closest to our target baseline
-    #         target_u = baseline_perp[0]
-    #         target_v = baseline_perp[1] if len(baseline_perp) > 1 else 0.0
-            
-    #         # Use differentiable interpolation to get the visibility at the target baseline
-    #         u_idx_float = jnp.interp(target_u, u_baseline_rotated, jnp.arange(len(u_baseline_rotated)))
-    #         v_idx_float = jnp.interp(target_v, v_baseline_rotated, jnp.arange(len(v_baseline_rotated)))
-            
-    #         # Clamp to valid range
-    #         u_idx_float = jnp.clip(u_idx_float, 0, self.nx - 1)
-    #         v_idx_float = jnp.clip(v_idx_float, 0, self.ny - 1)
-            
-    #         # Use nearest neighbor (round to integer)
-    #         u_idx = jnp.round(u_idx_float).astype(int)
-    #         v_idx = jnp.round(v_idx_float).astype(int)
-            
-    #         fft_value = intensity_fft[v_idx, u_idx]
-            
-    #         return jnp.abs(fft_value)**2
-        
-    #     # Use JAX to compute the gradient
-    #     return jax.grad(V_squared_with_params)(params)
 
     def get_params(self) -> dict:
         """
@@ -554,7 +439,8 @@ class GridSource(source.ChaoticSource):
             Dictionary containing source parameters
         """
         return {
-            'pixel_scale_rad':  self.pixel_scale_m / self.distance,
+            # 'pixel_scale_rad':  self.pixel_scale_m / self.distance,
+            's': 1.,
             'phi_B': self.phi_B
         }
     
@@ -576,7 +462,8 @@ class GridSource(source.ChaoticSource):
             params = self.get_params()
         
         # Calculate pixel scale in steradians based on current parameters
-        pixel_scale_rad = params['pixel_scale_rad']  # radians per pixel
+        pixel_scale_rad = self.pixel_scale_m / (params['s'] * self.distance)
+        # params['pixel_scale_rad']  # radians per pixel
         pixel_area_sr = pixel_scale_rad**2  # steradians per pixel
         
         # Sum intensity over spatial dimensions and multiply by pixel area
