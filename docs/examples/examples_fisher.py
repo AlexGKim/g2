@@ -52,7 +52,9 @@ def summary(source):
             baseline_list.append(np.array(b))
     
     # Calculate Fisher matrix
-    F = fisher_matrix(source, nu_0_list, baseline_list, obs)
+    F = np.zeros((len(source.get_params()), len(source.get_params())))
+    for nu_0, baseline in zip(nu_0_list, baseline_list): 
+        F = F+ fisher_matrix(source, nu_0, baseline, obs)
     print(f"Fisher matrix shape: {F.shape}")
     print(f"Fisher matrix:\n{F}")
     

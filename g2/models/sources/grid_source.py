@@ -444,7 +444,7 @@ class GridSource(source.ChaoticSource):
             'phi_B': self.phi_B
         }
     
-    def specific_flux(self, params: dict = None) -> np.ndarray:
+    def specific_flux_grid(self, params: dict = None) -> np.ndarray:
         """
         Calculate specific flux spectrum accounting for distance-dependent pixel scale.
         
@@ -472,7 +472,7 @@ class GridSource(source.ChaoticSource):
         
         return flux_spectrum
 
-    def total_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float) -> float:
         """
         Calculate total flux F_nu = ∫ I_nu d²n̂.
         
@@ -486,7 +486,7 @@ class GridSource(source.ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹
         """
-        flux_spectrum = self.specific_flux()
+        flux_spectrum = self.specific_flux_grid()
         return jnp.interp(nu, self.frequency_grid, flux_spectrum)
     
     def get_spectrum_info(self):
@@ -501,8 +501,8 @@ class GridSource(source.ChaoticSource):
         return {
             'wavelength_range_angstrom': (np.min(self.wavelength_grid), np.max(self.wavelength_grid)),
             'frequency_range_hz': (self.freq_min, self.freq_max),
-            'peak_flux_density_w_m2_hz': np.max(self.specific_flux()),
-            'total_luminosity_estimate': np.trapezoid(self.specific_flux(), self.frequency_grid),
+            'peak_flux_density_w_m2_hz': np.max(self.specific_flux_grid()),
+            'total_luminosity_estimate': np.trapezoid(self.specific_flux_grid(), self.frequency_grid),
             'spatial_grid': (self.nx, self.ny),
             'wavelength_points': self.n_wavelengths
         }

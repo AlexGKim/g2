@@ -14,7 +14,8 @@ def summary(source):
     D_res = (1.22 * lambda_0  / (2 * source.radius))
 
     # Calculate inverse noise for a baseline measurement half the resolution limit
-    baseline = np.array([D_res/2, 0.0, 0.0])
+    baseline = jnp.array([D_res/2, 0.0, 0.0])
+    baseline2 = jnp.array([D_res/3, -D_res/3, 0.0])
 
     # Observational parameters
     telescope_area = 1.0  # m²
@@ -30,7 +31,7 @@ def summary(source):
     )
 
     nus = jnp.array([nu_0, nu_0*1.1])
-    baselines = jnp.array([baseline, baseline*1.1])
+    baselines = jnp.array([baseline, baseline2])
     print("")
     print("Source type:", type(source).__name__)  # Print source type
     print("Source parameters:", source.get_params())    # Print source parameters

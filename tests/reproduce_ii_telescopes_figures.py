@@ -76,7 +76,7 @@ def reproduce_figure_3():
         frequency_grid = np.array(source.frequency_grid)  # [Hz] - convert from jnp to np
         
         # Use the new specific_flux method which accounts for distance properly
-        flux_at_earth_mks = np.array(source.specific_flux())  # [W m⁻² Hz⁻¹] at Earth
+        flux_at_earth_mks = np.array(source.specific_flux_grid())  # [W m⁻² Hz⁻¹] at Earth
         
         # Convert from MKS to CGS: [W m⁻² Hz⁻¹] to [erg s⁻¹ cm⁻² Hz⁻¹]
         flux_at_earth_cgs = flux_at_earth_mks * 1e3  # W to erg/s: 1W = 1e7 erg/s, m² to cm²: 1m² = 1e4 cm²
