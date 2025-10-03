@@ -160,8 +160,8 @@ def inverse_noise(
 
 def fisher_matrix(
     source: ChaoticSource,
-    nu_0_list: List[float],
-    baseline_list: List[np.ndarray],
+    nu_0: float,
+    baseline: np.ndarray,
     observation: Observation
 ) -> np.ndarray:
     """
@@ -215,12 +215,7 @@ def fisher_matrix(
     >>> observation = Observation(integration_time=3600, telescope_area=1.0)
     >>> fisher = fisher_matrix(disk, nu_0_list, baseline_list, observation)
     """
-    # Validate inputs
-    if len(nu_0_list) != len(baseline_list):
-        raise ValueError(
-            f"nu_0_list and baseline_list must have the same length. "
-            f"Got {len(nu_0_list)} frequencies and {len(baseline_list)} baselines."
-        )
+
     
     # Get parameter names in consistent order
     params = list(source.get_params().keys())
@@ -246,32 +241,32 @@ def fisher_matrix(
             param_indices[param_name] = slice(start_idx, start_idx + len(flat_value))
             start_idx += len(flat_value)
     
-    n_params = len(flattened_params)
-    fisher = np.zeros((n_params, n_params))
+    # n_params = len(flattened_params)
+    # fisher = np.zeros((n_params, n_params))
     
     # Iterate over each measurement configuration
-    for nu_0, baseline in zip(nu_0_list, baseline_list):
-        # Compute Jacobian of V_squared with respect to parameters
-        jacobian_dict = source.V_squared_jacobian(nu_0=nu_0, baseline=baseline)
-        
-        # Flatten the jacobian values in the same order as parameters
-        jacobian = []
-        for param_name in params:
-            grad_value = jacobian_dict[param_name]
-            if np.isscalar(grad_value):
-                jacobian.append(grad_value)
-            else:
-                # Flatten array gradients
-                grad_array = np.asarray(grad_value)
-                jacobian.extend(grad_array.flatten())
-        
-        jacobian = np.array(jacobian)
-        
-        # Calculate inverse noise (standard deviation) for this measurement
-        inverse_sigma = inverse_noise(source, nu_0, baseline, observation)
-        
-        # Compute contribution to Fisher matrix
-        inv_variance = inverse_sigma**2
-        fisher += np.outer(jacobian, jacobian) * inv_variance
+
+    # Compute Jacobian of V_squared with respect to parameters
+    jacobian_dict = source.V_squared_jacobian(nu_0=nu_0, baseline=baseline)
     
-    return fisher
+    # Flatten the jacobian values in the same order as parameters
+    jacobian = []
+    for param_name in params:
+        grad_value = jacobian_dict[param_name]
+        if np.isscalar(grad_value):
+            jacobian.append(grad_value)
+        else:
+            # Flatten array gradients
+            grad_array = np.asarray(grad_value)
+            jacobian.extend(grad_array.flatten())
+    
+    jacobian = np.array(jacobian)
+    
+    # Calculate inverse noise (standard deviation) for this measurement
+    inverse_sigma = inverse_noise(source, nu_0, baseline, observation)
+    
+    # Compute contribution to Fisher matrix
+    inv_variance = inverse_sigma**2
+    fisher = np.outer(jacobian, jacobian) * inv_variance
+    
+    return fisher.real
