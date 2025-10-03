@@ -180,7 +180,7 @@ class AbstractSource(ABC):
     @abstractmethod
     def specific_flux(self, nu: float) -> float:
         """
-        Calculate total flux F_nu = ∫ I_nu d²n̂.
+        Calculate specific flux F_nu = ∫ I_nu d²n̂.
         
         This method should return the total flux density by integrating the
         specific intensity over all solid angles. This is used for normalization

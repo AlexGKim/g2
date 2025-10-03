@@ -89,7 +89,6 @@ class Observation:
 def inverse_noise(
     source: ChaoticSource,
     nu_0: float,
-    baseline: np.ndarray,
     observation: Observation
 ) -> float:
     """
@@ -106,8 +105,6 @@ def inverse_noise(
         The chaotic light source object.
     nu_0 : float
         Central frequency in Hz.
-    baseline : np.ndarray
-        Baseline vector in meters [Bx, By, Bz].
     observation : Observation
         Telescope and detector configuration parameters.
         
@@ -162,7 +159,8 @@ def fisher_matrix(
     source: ChaoticSource,
     nu_0: float,
     baseline: np.ndarray,
-    observation: Observation
+    observation: Observation,
+    params = None
 ) -> np.ndarray:
     """
     Calculate the Fisher matrix for the parameters of a chaotic source model
@@ -177,9 +175,9 @@ def fisher_matrix(
     ----------
     source : ChaoticSource
         The chaotic source model with parameters to estimate.
-    nu_0_list : list of float
+    nu_0 : float
         List of central frequencies in Hz for each measurement.
-    baseline_list : list of np.ndarray
+    baseline : np.ndarray
         List of baseline vectors in meters [Bx, By, Bz] for each measurement.
         Must have the same length as nu_0_list.
     observation : Observation
@@ -216,18 +214,19 @@ def fisher_matrix(
     >>> fisher = fisher_matrix(disk, nu_0_list, baseline_list, observation)
     """
 
-    
+    if params is None:
+        params = source.get_params()
+
     # Get parameter names in consistent order
-    params = list(source.get_params().keys())
+    params_keys = list(params.keys())
     
     # Flatten all parameter values to get total number of scalar parameters
-    param_values = source.get_params()
     flattened_params = []
     param_indices = {}  # Track which indices correspond to which parameters
     
     start_idx = 0
-    for param_name in params:
-        value = param_values[param_name]
+    for param_name in params_keys:
+        value = params[param_name]
         if np.isscalar(value):
             # Scalar parameter
             flattened_params.append(value)
@@ -241,17 +240,13 @@ def fisher_matrix(
             param_indices[param_name] = slice(start_idx, start_idx + len(flat_value))
             start_idx += len(flat_value)
     
-    # n_params = len(flattened_params)
-    # fisher = np.zeros((n_params, n_params))
-    
-    # Iterate over each measurement configuration
 
     # Compute Jacobian of V_squared with respect to parameters
-    jacobian_dict = source.V_squared_jacobian(nu_0=nu_0, baseline=baseline)
+    jacobian_dict = source.V_squared_jacobian(nu_0=nu_0, baseline=baseline, params=params)
     
     # Flatten the jacobian values in the same order as parameters
     jacobian = []
-    for param_name in params:
+    for param_name in params_keys:
         grad_value = jacobian_dict[param_name]
         if np.isscalar(grad_value):
             jacobian.append(grad_value)
@@ -263,7 +258,7 @@ def fisher_matrix(
     jacobian = np.array(jacobian)
     
     # Calculate inverse noise (standard deviation) for this measurement
-    inverse_sigma = inverse_noise(source, nu_0, baseline, observation)
+    inverse_sigma = inverse_noise(source, nu_0, observation)
     
     # Compute contribution to Fisher matrix
     inv_variance = inverse_sigma**2

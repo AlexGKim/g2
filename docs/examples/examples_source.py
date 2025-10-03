@@ -65,14 +65,9 @@ def summary(source):
     # Calculate noise
     print("Inverse noise (SNR) for 1 hour integration:", end=" ")
     print(". nu scalar")
-    print(inverse_noise(source, nu_0, baseline, obs))
+    print(inverse_noise(source, nu_0, obs))
     print(". nu vectorized")
-    print(jax.vmap(inverse_noise, in_axes=(None, 0, None, None))(source, nus, baseline, obs))
-    print(". baseline vectorized")
-    print(jax.vmap(inverse_noise, in_axes=(None, None, 0, None))(source, nu_0, baselines, obs))
-    print(". nu and baseline vectorized")
-    print(jax.vmap(lambda nu: jax.vmap(
-        lambda b: inverse_noise(source, nu, b, obs))(baselines))(nus))
+    print(jax.vmap(inverse_noise, in_axes=(None, 0, None))(source, nus, obs))
     
     return
 # summary-end

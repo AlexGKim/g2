@@ -1,7 +1,7 @@
 import numpy as np
 from jax import numpy as jnp
 import jax
-from g2 import inverse_noise, fisher_matrix, Observation
+from g2 import fisher_matrix, Observation
 
 # summary-begin
 def summary(source):
