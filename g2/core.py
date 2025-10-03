@@ -176,10 +176,9 @@ def fisher_matrix(
     source : ChaoticSource
         The chaotic source model with parameters to estimate.
     nu_0 : float
-        List of central frequencies in Hz for each measurement.
+        central frequencies in Hz for each measurement.
     baseline : np.ndarray
-        List of baseline vectors in meters [Bx, By, Bz] for each measurement.
-        Must have the same length as nu_0_list.
+        baseline vectors in meters [Bx, By, Bz] for each measurement.
     observation : Observation
         Telescope and detector configuration used for all measurements.
             
@@ -220,25 +219,25 @@ def fisher_matrix(
     # Get parameter names in consistent order
     params_keys = list(params.keys())
     
-    # Flatten all parameter values to get total number of scalar parameters
-    flattened_params = []
-    param_indices = {}  # Track which indices correspond to which parameters
+    # # Flatten all parameter values to get total number of scalar parameters
+    # flattened_params = []
+    # param_indices = {}  # Track which indices correspond to which parameters
     
-    start_idx = 0
-    for param_name in params_keys:
-        value = params[param_name]
-        if np.isscalar(value):
-            # Scalar parameter
-            flattened_params.append(value)
-            param_indices[param_name] = slice(start_idx, start_idx + 1)
-            start_idx += 1
-        else:
-            # Array parameter - flatten it
-            value_array = np.asarray(value)
-            flat_value = value_array.flatten()
-            flattened_params.extend(flat_value)
-            param_indices[param_name] = slice(start_idx, start_idx + len(flat_value))
-            start_idx += len(flat_value)
+    # start_idx = 0
+    # for param_name in params_keys:
+    #     value = params[param_name]
+    #     if np.isscalar(value):
+    #         # Scalar parameter
+    #         flattened_params.append(value)
+    #         param_indices[param_name] = slice(start_idx, start_idx + 1)
+    #         start_idx += 1
+    #     else:
+    #         # Array parameter - flatten it
+    #         value_array = np.asarray(value)
+    #         flat_value = value_array.flatten()
+    #         flattened_params.extend(flat_value)
+    #         param_indices[param_name] = slice(start_idx, start_idx + len(flat_value))
+    #         start_idx += len(flat_value)
     
 
     # Compute Jacobian of V_squared with respect to parameters

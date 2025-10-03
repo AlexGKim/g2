@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 from ..base import source
-from jax.numpy.fft import fftshift, fftfreq
+from jax.numpy.fft import fft2,fftshift, fftfreq
 from jax import numpy as jnp
 import jax
 
@@ -29,7 +29,6 @@ def _compute_map_fft(intensity_map) -> jnp.ndarray:
     jnp.ndarray
         2D FFT of intensity map, normalized by total flux
     """
-    from jax.numpy.fft import fft2, fftshift
     
     total_flux = jnp.sum(intensity_map)
     intensity_fft = fft2(intensity_map / total_flux)
@@ -267,7 +266,7 @@ class GridSource(source.ChaoticSource):
             u_idx_safe = jnp.clip(u_idx, 0, self.nx - 1)
             v_idx_safe = jnp.clip(v_idx, 0, self.ny - 1)
             
-            value = grid_data[v_idx_safe, u_idx_safe]
+            value = grid_data[u_idx_safe, v_idx_safe]
             return jnp.where(in_bounds, value, 0.0)
             
         elif coord_type == 'fft':
@@ -383,12 +382,12 @@ class GridSource(source.ChaoticSource):
 
         if 's' in params:
             # Use F00 for size parameter derivative (dgammas corresponds to size changes)
-            jacobian_grid['s'] = jnp.conjugate(gamma) * dgammas + gamma * jnp.conjugate(dgammas)
+            jacobian_grid['s'] = (jnp.conjugate(gamma) * dgammas + gamma * jnp.conjugate(dgammas)).real
         
         # For phi_B parameter (corresponds to rotation parameter "phi" in sedona)
         if 'phi_B' in params:
             # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
-            jacobian_grid['phi_B'] = jnp.conjugate(gamma) * dgammaphi + gamma * jnp.conjugate(dgammaphi)
+            jacobian_grid['phi_B'] = (jnp.conjugate(gamma) * dgammaphi + gamma * jnp.conjugate(dgammaphi)).real
         
         return jacobian_grid
         
@@ -417,72 +416,13 @@ class GridSource(source.ChaoticSource):
         if params is None:
             params = self.get_params()
         
-        # Find the frequency index
-        # freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
-        
-        # Extract perpendicular baseline components
-    
-        
-        # # Get normalized flux data (following sedona algorithm)
-        # flux_norm = self.intensity_grid[freq_idx, :, :]
-        # flux_norm = flux_norm / jnp.sum(flux_norm)
-        
-        # # Create padded array (without padding as requested)
-        # paddedarray = flux_norm
-        
-        # # Calculate gamma (FFT of normalized intensity)
-        # gamma = jax.numpy.fft.fft2(paddedarray)
-        
-        # # Calculate coordinate grids for derivatives (following sedona algorithm)
-        # # theta represents pixel coordinates relative to center
-        # theta_x = jnp.arange(paddedarray.shape[1]) - paddedarray.shape[1] // 2 + 0.5
-        # theta_y = jnp.arange(paddedarray.shape[0]) - paddedarray.shape[0] // 2 + 0.5
-        
-        # # Calculate derivatives of gamma with respect to u and v coordinates
-        # # Following sedona: dgammau = -2j*pi * fft2(paddedarray * theta[:,None])
-        # dgammau = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_y[:, None])
-        # dgammav = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_x[None, :])
-        
-        # # Get frequency coordinates for spatial frequency space
-        # u = jax.numpy.fft.fftfreq(paddedarray.shape[0])
-        # v = jax.numpy.fft.fftfreq(paddedarray.shape[1])
-        
-        # # Calculate derivatives in parameter space (following sedona algorithm)
-        # # dgammas corresponds to derivative with respect to size parameter
-        # # dgammaphi corresponds to derivative with respect to rotation parameter
-        # dgammas = -(u[:, None] * dgammau + v[None, :] * dgammav) / params['s']
-        # dgammaphi = -v[None, :] * dgammau + u[:, None] * dgammav
-
-        # jacobian_grid = {}
-
-        # if 's' in params:
-        #     # Use F00 for size parameter derivative (dgammas corresponds to size changes)
-        #     jacobian_grid['s'] = jnp.conjugate(gamma) * dgammas + gamma * jnp.conjugate(dgammas)
-        
-        # # For phi_B parameter (corresponds to rotation parameter "phi" in sedona)
-        # if 'phi_B' in params:
-        #     # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
-        #     jacobian_grid['phi_B'] = jnp.conjugate(gamma) * dgammaphi + gamma * jnp.conjugate(dgammaphi)
 
         jacobian_grid = self._V_squared_jacobian_grid(nu_0, params)
         
-        # # Calculate Fisher matrix elements (following sedona algorithm)
-        # F00 = jnp.abs(2 * gamma.conjugate() * dgammas) ** 2
-        # F01 = jnp.abs(2 * gamma.conjugate() * dgammas) * jnp.abs(2 * gamma.conjugate() * dgammaphi)
-        # F11 = jnp.abs(2 * gamma.conjugate() * dgammaphi) ** 2
-        
-        # # Apply fftshift to center the arrays
-        # F00 = jnp.fft.fftshift(F00)
-        # F01 = jnp.fft.fftshift(F01)
-        # F11 = jnp.fft.fftshift(F11)
         baseline_perp = baseline[:2]
         # Use common coordinate transformation and interpolation methods
         u_target, v_target = self._transform_coordinates(baseline_perp, params, 'baseline', nu_0)
         
-        # # Get Fisher matrix values at this point
-        # F00_at_point = F00[v_idx, u_idx]
-        # F01_at_point = F01[v_idx, u_idx]
-        # F11_at_point = F11[v_idx, u_idx]
         
         # Calculate Jacobian using Fisher matrix elements
         # Based on sedona algorithm: F00 corresponds to size parameter, F11 to rotation parameter
@@ -580,47 +520,12 @@ class GridSource(source.ChaoticSource):
             'wavelength_points': self.n_wavelengths
         }
     
-    def plot_spectrum(self, wavelength_units='angstrom'):
-        """
-        Plot the spectrum (requires matplotlib).
-        
-        Parameters
-        ----------
-        wavelength_units : str
-            Units for wavelength axis ('angstrom', 'nm', 'micron')
-        """
-        try:
-            import matplotlib.pyplot as plt
-            
-            if wavelength_units == 'angstrom':
-                wave_plot = self.wavelength_grid
-                xlabel = 'Wavelength [Å]'
-            elif wavelength_units == 'nm':
-                wave_plot = self.wavelength_grid / 10
-                xlabel = 'Wavelength [nm]'
-            elif wavelength_units == 'micron':
-                wave_plot = self.wavelength_grid / 10000
-                xlabel = 'Wavelength [μm]'
-            else:
-                raise ValueError("wavelength_units must be 'angstrom', 'nm', or 'micron'")
-            
-            plt.figure(figsize=(10, 6))
-            plt.plot(wave_plot, self.flux_grid.sum(index(1,2)), 'b-', linewidth=1)
-            plt.xlabel(xlabel)
-            plt.ylabel('Total Flux Density [erg/s/cm²/Å]')
-            plt.title('Sedona SN2011fe Spectrum (Phase 0) - Spatially Integrated')
-            plt.grid(True, alpha=0.3)
-            plt.yscale('log')
-            plt.show()
-            
-        except ImportError:
-            print("matplotlib not available for plotting")
 
     @staticmethod
     def create_grid_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
                                 flux_file: str = "../data/Phase0Flux.npy",
-                                pixel_scale_m: float = None,
-                                wavelength_scale: float = None,
+                                pixel_scale_m: float = 1,
+                                wavelength_scale: float = 1,
                                 distance: float = 204379200000000.0,
                                 phi_B: float = 0.0, padfactor=1) -> "GridSource":
         """
@@ -658,10 +563,6 @@ class GridSource(source.ChaoticSource):
         # Check for monotonically increasing values
         if not np.all(np.diff(wavelength_grid) > 0):
             raise ValueError("Wavelength grid is not monotonically increasing")
-        
-        # Default pixel scale for SN2011fe if not provided
-        if pixel_scale_m is None:
-            pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
 
 
         # Padded grid
