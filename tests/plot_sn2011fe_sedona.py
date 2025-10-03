@@ -134,11 +134,12 @@ def plot_data_loading_and_initialization():
         ax1.grid(True, alpha=0.3)
         
         # Plot 2: Photon flux density per frequency
-        ax2.plot(source.wavelength_grid, source.specific_photon_flux, 'r-', linewidth=2, label='SEDONA')
+        specific_photon_flux = source.specific_photon_flux()
+        ax2.plot(source.wavelength_grid, specific_photon_flux, 'r-', linewidth=2, label='SEDONA')
         ax2.set_xlabel('Wavelength (Å)')
         ax2.set_ylabel('n_ν [s⁻¹ cm⁻² Hz⁻¹]')
         ax2.set_title(f'Photon Flux Density per Frequency\n({data_type})')
-        ax2.set_ylim((0, np.max(source.specific_photon_flux[np.logical_and(
+        ax2.set_ylim((0, np.max(specific_photon_flux[np.logical_and(
             source.wavelength_grid > 4000, source.wavelength_grid < 8000)]) * 1.1))
         ax2.set_xlim((3300, 10000))
         ax2.grid(True, alpha=0.3)

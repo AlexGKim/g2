@@ -103,8 +103,8 @@ class GridSource(source.ChaoticSource):
         # self.total_flux_spectrum = specific_flux_values * c / (wavelength_m**2) * 1e-10 * 1e4 / 1e-7  # [erg/s/cm²/Å]
         
         # Calculate total_photon_spectrum for backward compatibility
-        h = 6.62607015e-34  # Planck constant
-        self.specific_photon_flux = specific_flux_values / (h * self.frequency_grid)  # [photons/s/m²/Hz]
+        # h = 6.62607015e-34  # Planck constant
+        # self.specific_photon_flux = specific_flux_values / (h * self.frequency_grid)  # [photons/s/m²/Hz]
         
         # Store frequency range for reference (using frequency grid directly)
         self.freq_min = np.min(self.frequency_grid)
@@ -120,6 +120,11 @@ class GridSource(source.ChaoticSource):
             Pixel scale in radians per pixel
         """
         return self.pixel_scale_m / self.distance
+
+    def specific_photon_flux(self):
+             # Calculate total_photon_spectrum for backward compatibility
+        h = 6.62607015e-34  # Planck constant
+        return   self.specific_flux() / (h * self.frequency_grid)  # [photons/s/m²/Hz]
     
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, params=None) -> Union[float, np.ndarray]:
         """
