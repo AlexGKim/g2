@@ -499,7 +499,7 @@ def reproduce_figure_9():
                     else:
                         SNR_map[j,k] = 0.0
 
-            
+            print(SNR_map.mean(), SNR_map.std())
             # Plot SNR map
             # Use appropriate normalization for the new SNR calculation
             vmax = np.percentile(SNR_map[SNR_map > 0], 95) if np.any(SNR_map > 0) else 1.0
@@ -507,7 +507,7 @@ def reproduce_figure_9():
             
             im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
                             origin='lower', cmap='viridis',
-                            norm=LogNorm(vmin=max(vmin, 1e-3), vmax=vmax))
+                            norm=LogNorm(vmin=vmin, vmax=vmax))
             
             ax.set_xlabel('u [km][λ/5000Å]')
             if i == 0:
@@ -520,6 +520,7 @@ def reproduce_figure_9():
             ax.text(0.05, 0.95, config_name, transform=ax.transAxes,
                     verticalalignment='top', color='white', fontweight='bold')
             
+            plt.show()
             # Add colorbar for the last subplot in each row without affecting plot size
             if i == len(target_wavelengths) - 1:
                 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -533,183 +534,6 @@ def reproduce_figure_9():
     plt.tight_layout()
     return fig
 
-# fig, axes = plt.subplots(2, 5, figsize=(15, 8))
-
-# # Import core module for Fisher matrix calculation
-# from g2.core import fisher_matrix, Observation
-
-# source, data_type = get_sedona_source()
-# if source is None:
-#     raise Exception("Could not create source")
-
-# # Select wavelengths
-# target_wavelengths = [3697, 4698, 6128, 6190, 8746]  # Angstrom
-
-# # Observational parameters (from paper)
-# z = 0.004  # Redshift
-# B_mag = 12.0  # Magnitude
-# A = np.pi * (10.0/2)**2  # Telescope area (10m diameter)
-# epsilon = 0.39  # Total throughput
-# T_obs = 3600.0  # 1 hour observation
-# sigma_t = 13e-12  # 13 ps RMS timing jitter
-
-# # Create observation object
-# observation = Observation(
-#     integration_time=T_obs,
-#     telescope_area=A,
-#     throughput=epsilon,
-#     detector_jitter=sigma_t
-# )
-
-# # Set up u-v coordinate grid
-# u_max = 10  # km
-# v_max = 10  # km
-# n_points = 20  # Reduced for performance
-
-# u_coords = np.linspace(-u_max, u_max, n_points)
-# v_coords = np.linspace(-v_max, v_max, n_points)
-# U, V = np.meshgrid(u_coords, v_coords)
-
-# for i, target_wave in enumerate(target_wavelengths):
-#     # Find closest wavelength and frequency
-#     wave_idx = np.argmin(np.abs(source.wavelength_grid - target_wave))
-#     actual_wave = source.wavelength_grid[wave_idx]
-#     nu_0 = source.frequency_grid[wave_idx]
-    
-#     # Calculate SNR maps for two-pair and three-pair configurations
-#     for config_idx, (ax, config_name) in enumerate([(axes[0,i], 'Two-pair'),
-#                                                     (axes[1,i], 'Three-pair')]):
-        
-#         SNR_map = np.zeros((n_points, n_points))
-        
-#         for j in range(n_points):
-#             for k in range(n_points):
-#                 # Convert u-v to baseline
-#                 scale_factor = actual_wave / 5000.0
-#                 baseline = np.array([U[j,k] * 1000 * scale_factor,
-#                                     V[j,k] * 1000 * scale_factor, 0.0])
-                
-                
-#                     # Calculate V²
-#                 V_squared = source.V_squared(nu_0, baseline)
-                
-#                 if V_squared > 0:
-#                     # Define baseline configurations based on the paper description
-#                     if config_idx == 0:  # Two-pair configuration (row 1)
-#                         # Two baselines perpendicular to each other, 30 min each
-#                         baseline_magnitude = np.linalg.norm(baseline[:2])
-#                         if baseline_magnitude > 0:
-#                             # Normalize and create perpendicular baselines
-#                             baseline_norm = baseline[:2] / baseline_magnitude
-#                             baseline_perp = np.array([-baseline_norm[1], baseline_norm[0]])
-                            
-#                             baseline_list = [
-#                                 np.array([baseline_norm[0] * baseline_magnitude, baseline_norm[1] * baseline_magnitude, 0.0]),
-#                                 np.array([baseline_perp[0] * baseline_magnitude, baseline_perp[1] * baseline_magnitude, 0.0])
-#                             ]
-#                         else:
-#                             # For zero baseline, use orthogonal unit baselines
-#                             baseline_list = [
-#                                 np.array([1.0, 0.0, 0.0]),
-#                                 np.array([0.0, 1.0, 0.0])
-#                             ]
-                        
-#                         # Each baseline gets 30 minutes (half the total observation time)
-#                         exposure_time_per_baseline = T_obs / 2.0
-                        
-#                     else:  # Three-pair configuration (row 2)
-#                         # Three baselines in right isosceles triangle: two perpendicular + one diagonal
-#                         baseline_magnitude = np.linalg.norm(baseline[:2])
-#                         if baseline_magnitude > 0:
-#                             baseline_norm = baseline[:2] / baseline_magnitude
-#                             baseline_perp = np.array([-baseline_norm[1], baseline_norm[0]])
-#                             # Diagonal baseline at 45° with √2 separation
-#                             baseline_diag = (baseline_norm + baseline_perp) / np.sqrt(2) * baseline_magnitude * np.sqrt(2)
-                            
-#                             baseline_list = [
-#                                 np.array([baseline_norm[0] * baseline_magnitude, baseline_norm[1] * baseline_magnitude, 0.0]),
-#                                 np.array([baseline_perp[0] * baseline_magnitude, baseline_perp[1] * baseline_magnitude, 0.0]),
-#                                 np.array([baseline_diag[0], baseline_diag[1], 0.0])
-#                             ]
-#                         else:
-#                             # For zero baseline, use the triangle configuration
-#                             baseline_list = [
-#                                 np.array([1.0, 0.0, 0.0]),
-#                                 np.array([0.0, 1.0, 0.0]),
-#                                 np.array([np.sqrt(2), np.sqrt(2), 0.0])
-#                             ]
-                        
-#                         # Each baseline gets 20 minutes (one third of total observation time)
-#                         exposure_time_per_baseline = T_obs / 3.0
-                    
-#                     # Create modified observation object for each baseline
-#                     baseline_observation = Observation(
-#                         integration_time=exposure_time_per_baseline,
-#                         telescope_area=observation.telescope_area,
-#                         throughput=observation.throughput,
-#                         detector_jitter=observation.detector_jitter
-#                     )
-                    
-#                     # Calculate total Fisher information from all baselines
-#                     total_fisher_pixel_scale_rad = 0.0
-                    
-#                     for bl in baseline_list:
-#                         # Get the Jacobian for this baseline
-#                         jacobian_dict = source.V_squared_jacobian(nu_0, bl)
-                        
-#                         if 's' in jacobian_dict:
-#                             # Get the derivative of V² with respect to pixel_scale_rad
-#                             dV2_dpixel_scale_rad = jacobian_dict['s']
-                            
-#                             # Calculate the inverse noise for this baseline with appropriate exposure time
-#                             from g2.core import inverse_noise
-#                             inv_noise = inverse_noise(source, nu_0, bl, baseline_observation)
-                            
-#                             # Add this baseline's contribution to Fisher information
-#                             fisher_contribution = (dV2_dpixel_scale_rad**2) * (inv_noise**2)
-#                             total_fisher_pixel_scale_rad += fisher_contribution
-                    
-#                     if total_fisher_pixel_scale_rad > 0:
-#                         # The variance is the inverse of total Fisher information
-#                         variance_pixel_scale_rad = 1.0 / total_fisher_pixel_scale_rad
-                        
-#                         # Calculate SNR using correct formula: V² / sqrt(variance)
-#                         SNR = V_squared / np.sqrt(variance_pixel_scale_rad)
-#                         SNR_map[j,k] = SNR
-#                     else:
-#                         SNR_map[j,k] = 0.0
-#                 else:
-#                     SNR_map[j,k] = 0.0
-
-        
-#         # Plot SNR map
-#         # Use appropriate normalization for the new SNR calculation
-#         vmax = np.percentile(SNR_map[SNR_map > 0], 95) if np.any(SNR_map > 0) else 1.0
-#         vmin = np.percentile(SNR_map[SNR_map > 0], 5) if np.any(SNR_map > 0) else 1e-2
-        
-#         im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
-#                         origin='lower', cmap='viridis',
-#                         norm=LogNorm(vmin=max(vmin, 1e-3), vmax=vmax))
-        
-#         ax.set_xlabel('u [km][λ/5000Å]')
-#         if i == 0:
-#             ax.set_ylabel('v [km][λ/5000Å]')
-        
-#         if config_idx == 0:
-#             ax.set_title(f'λ = {actual_wave:.0f}Å')
-        
-#         # Add configuration label
-#         ax.text(0.05, 0.95, config_name, transform=ax.transAxes,
-#                 verticalalignment='top', color='white', fontweight='bold')
-        
-#         # Add colorbar for the last subplot in each row without affecting plot size
-#         if i == len(target_wavelengths) - 1:
-#             from mpl_toolkits.axes_grid1 import make_axes_locatable
-#             divider = make_axes_locatable(ax)
-#             cax = divider.append_axes("right", size="5%", pad=0.05)
-#             plt.colorbar(im, cax=cax, label='SNR (pixel_scale_rad)')
-
-# fig.suptitle('SNR Maps for Distance Measurements (Figure 9)', fontsize=14)
 
 def main():
     """Create all figure reproductions and save to PDF"""
@@ -722,25 +546,25 @@ def main():
     
     try:
         with PdfPages('reproduce_ii_telescopes_figures.pdf') as pdf:
-            # print("1. Reproducing Figure 3: Photon flux density spectrum...")
-            # fig3 = reproduce_figure_3()
-            # pdf.savefig(fig3, bbox_inches='tight')
-            # plt.close(fig3)
+            print("1. Reproducing Figure 3: Photon flux density spectrum...")
+            fig3 = reproduce_figure_3()
+            pdf.savefig(fig3, bbox_inches='tight')
+            plt.close(fig3)
             
-            # print("2. Reproducing Figure 4: SEDONA emission profiles...")
-            # fig4 = reproduce_figure_4()
-            # pdf.savefig(fig4, bbox_inches='tight')
-            # plt.close(fig4)
+            print("2. Reproducing Figure 4: SEDONA emission profiles...")
+            fig4 = reproduce_figure_4()
+            pdf.savefig(fig4, bbox_inches='tight')
+            plt.close(fig4)
             
-            # print("3. Reproducing Figure 6: V² maps...")
-            # fig6 = reproduce_figure_6()
-            # pdf.savefig(fig6, bbox_inches='tight')
-            # plt.close(fig6)
+            print("3. Reproducing Figure 6: V² maps...")
+            fig6 = reproduce_figure_6()
+            pdf.savefig(fig6, bbox_inches='tight')
+            plt.close(fig6)
             
-            # print("4. Reproducing Figure 7: V² slices and differences...")
-            # fig7 = reproduce_figure_7()
-            # pdf.savefig(fig7, bbox_inches='tight')
-            # plt.close(fig7)
+            print("4. Reproducing Figure 7: V² slices and differences...")
+            fig7 = reproduce_figure_7()
+            pdf.savefig(fig7, bbox_inches='tight')
+            plt.close(fig7)
             
             print("5. Reproducing Figure 9: SNR maps...")
             fig9 = reproduce_figure_9()
