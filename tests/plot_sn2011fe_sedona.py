@@ -134,7 +134,7 @@ def plot_data_loading_and_initialization():
         ax1.grid(True, alpha=0.3)
         
         # Plot 2: Photon flux density per frequency
-        flux_at_earth_mks = np.array(source.specific_flux_grid())  # [W m⁻² Hz⁻¹] at Earth
+        flux_at_earth_mks = np.array(source._specific_flux_grid())  # [W m⁻² Hz⁻¹] at Earth
         
         # Convert from MKS to CGS: [W m⁻² Hz⁻¹] to [erg s⁻¹ cm⁻² Hz⁻¹]
         flux_at_earth_cgs = flux_at_earth_mks * 1e3  # W to erg/s: 1W = 1e7 erg/s, m² to cm²: 1m² = 1e4 cm²
@@ -155,7 +155,7 @@ def plot_data_loading_and_initialization():
         ax2.grid(True, alpha=0.3)
         
         # Plot 3: Flux density in SI units
-        ax3.plot(source.frequency_grid / 1e14, source.specific_flux_grid(), 'g-', linewidth=2)
+        ax3.plot(source.frequency_grid / 1e14, source._specific_flux_grid(), 'g-', linewidth=2)
         ax3.set_xlabel('Frequency (×10¹⁴ Hz)')
         ax3.set_ylabel('Flux Density (W/m²/Hz)')
         ax3.set_title('Flux Density vs Frequency')

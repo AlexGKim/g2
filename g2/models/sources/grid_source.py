@@ -320,8 +320,8 @@ class GridSource(source.ChaoticSource):
         
         # Use common interpolation method
         return self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
-    
-    def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
+
+    def _V_squared_jacobian_grid(self, nu_0: float, params: dict = None):
         """
         Calculate the Jacobian of |V|² with respect to source parameters using the sedona algorithm.
         
@@ -348,9 +348,6 @@ class GridSource(source.ChaoticSource):
         
         # Find the frequency index
         freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
-        
-        # Extract perpendicular baseline components
-        baseline_perp = baseline[:2]
         
         # Get normalized flux data (following sedona algorithm)
         flux_norm = self.intensity_grid[freq_idx, :, :]
@@ -393,6 +390,82 @@ class GridSource(source.ChaoticSource):
             # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
             jacobian_grid['phi_B'] = jnp.conjugate(gamma) * dgammaphi + gamma * jnp.conjugate(dgammaphi)
         
+        return jacobian_grid
+        
+    def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):
+        """
+        Calculate the Jacobian of |V|² with respect to source parameters using the sedona algorithm.
+        
+        This implementation follows the algorithm from sedona.ipynb that calculates Fisher matrix
+        elements F00, F01, F02 using gamma2 (which corresponds to V_squared).
+        
+        Parameters
+        ----------
+        nu_0 : float
+            Central frequency in Hz
+        baseline : array_like, shape (3,)
+            Baseline vector in meters [Bx, By, Bz]
+        params : dict, optional
+            Source parameters. If None, uses current source parameters
+            
+        Returns
+        -------
+        jacobian : dict
+            Dictionary with same keys as params, containing the partial
+            derivatives of |V|² with respect to each parameter
+        """
+        if params is None:
+            params = self.get_params()
+        
+        # Find the frequency index
+        # freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
+        
+        # Extract perpendicular baseline components
+    
+        
+        # # Get normalized flux data (following sedona algorithm)
+        # flux_norm = self.intensity_grid[freq_idx, :, :]
+        # flux_norm = flux_norm / jnp.sum(flux_norm)
+        
+        # # Create padded array (without padding as requested)
+        # paddedarray = flux_norm
+        
+        # # Calculate gamma (FFT of normalized intensity)
+        # gamma = jax.numpy.fft.fft2(paddedarray)
+        
+        # # Calculate coordinate grids for derivatives (following sedona algorithm)
+        # # theta represents pixel coordinates relative to center
+        # theta_x = jnp.arange(paddedarray.shape[1]) - paddedarray.shape[1] // 2 + 0.5
+        # theta_y = jnp.arange(paddedarray.shape[0]) - paddedarray.shape[0] // 2 + 0.5
+        
+        # # Calculate derivatives of gamma with respect to u and v coordinates
+        # # Following sedona: dgammau = -2j*pi * fft2(paddedarray * theta[:,None])
+        # dgammau = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_y[:, None])
+        # dgammav = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_x[None, :])
+        
+        # # Get frequency coordinates for spatial frequency space
+        # u = jax.numpy.fft.fftfreq(paddedarray.shape[0])
+        # v = jax.numpy.fft.fftfreq(paddedarray.shape[1])
+        
+        # # Calculate derivatives in parameter space (following sedona algorithm)
+        # # dgammas corresponds to derivative with respect to size parameter
+        # # dgammaphi corresponds to derivative with respect to rotation parameter
+        # dgammas = -(u[:, None] * dgammau + v[None, :] * dgammav) / params['s']
+        # dgammaphi = -v[None, :] * dgammau + u[:, None] * dgammav
+
+        # jacobian_grid = {}
+
+        # if 's' in params:
+        #     # Use F00 for size parameter derivative (dgammas corresponds to size changes)
+        #     jacobian_grid['s'] = jnp.conjugate(gamma) * dgammas + gamma * jnp.conjugate(dgammas)
+        
+        # # For phi_B parameter (corresponds to rotation parameter "phi" in sedona)
+        # if 'phi_B' in params:
+        #     # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
+        #     jacobian_grid['phi_B'] = jnp.conjugate(gamma) * dgammaphi + gamma * jnp.conjugate(dgammaphi)
+
+        jacobian_grid = self._V_squared_jacobian_grid(nu_0, params)
+        
         # # Calculate Fisher matrix elements (following sedona algorithm)
         # F00 = jnp.abs(2 * gamma.conjugate() * dgammas) ** 2
         # F01 = jnp.abs(2 * gamma.conjugate() * dgammas) * jnp.abs(2 * gamma.conjugate() * dgammaphi)
@@ -402,7 +475,7 @@ class GridSource(source.ChaoticSource):
         # F00 = jnp.fft.fftshift(F00)
         # F01 = jnp.fft.fftshift(F01)
         # F11 = jnp.fft.fftshift(F11)
-        
+        baseline_perp = baseline[:2]
         # Use common coordinate transformation and interpolation methods
         u_target, v_target = self._transform_coordinates(baseline_perp, params, 'baseline', nu_0)
         
@@ -444,7 +517,7 @@ class GridSource(source.ChaoticSource):
             'phi_B': self.phi_B
         }
     
-    def specific_flux_grid(self, params: dict = None) -> np.ndarray:
+    def _specific_flux_grid(self, params: dict = None) -> np.ndarray:
         """
         Calculate specific flux spectrum accounting for distance-dependent pixel scale.
         
@@ -486,7 +559,7 @@ class GridSource(source.ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹
         """
-        flux_spectrum = self.specific_flux_grid()
+        flux_spectrum = self._specific_flux_grid()
         return jnp.interp(nu, self.frequency_grid, flux_spectrum)
     
     def get_spectrum_info(self):
@@ -501,8 +574,8 @@ class GridSource(source.ChaoticSource):
         return {
             'wavelength_range_angstrom': (np.min(self.wavelength_grid), np.max(self.wavelength_grid)),
             'frequency_range_hz': (self.freq_min, self.freq_max),
-            'peak_flux_density_w_m2_hz': np.max(self.specific_flux_grid()),
-            'total_luminosity_estimate': np.trapezoid(self.specific_flux_grid(), self.frequency_grid),
+            'peak_flux_density_w_m2_hz': np.max(self._specific_flux_grid()),
+            'total_luminosity_estimate': np.trapezoid(self._specific_flux_grid(), self.frequency_grid),
             'spatial_grid': (self.nx, self.ny),
             'wavelength_points': self.n_wavelengths
         }
