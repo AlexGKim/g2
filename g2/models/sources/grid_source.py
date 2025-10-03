@@ -67,7 +67,7 @@ class GridSource(source.ChaoticSource):
         c = 2.99792458e8  # m/s
 
         # Store input grids
-        self.wavelength_grid = jnp.array(wavelength_grid)  # [Angstrom]
+        self.wavelength_grid = wavelength_grid  # [Angstrom]
         self.frequency_grid = c / (wavelength_grid * 1e-10)  # [Hz]
         self.pixel_scale_m = pixel_scale_m
         self.flux_grid = flux_grid  # [erg/s/Å]
@@ -76,13 +76,13 @@ class GridSource(source.ChaoticSource):
         flux_grid_mks = flux_grid * 1e-7 * wavelength_grid[:,None,None]**2 / (c * 1e10)
         
         # Convert to intensity [W m⁻² Hz⁻¹ sr⁻¹]
-        self.intensity_data = jnp.array(flux_grid_mks / (4 * np.pi * pixel_scale_m**2))
+        self.intensity_grid = jnp.array(flux_grid_mks / (4 * np.pi * pixel_scale_m**2))
 
         # Store intensity data for dynamic flux calculation
         # specific_flux will be calculated dynamically based on distance
 
         # Physical constants for unit conversion
-        wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
+        # wavelength_m = wavelength_grid * 1e-10  # Convert Å to m
 
         # Store parameters
         # self.B = B
@@ -90,7 +90,7 @@ class GridSource(source.ChaoticSource):
         self.phi_B = phi_B
         
         # Get spatial dimensions
-        self.n_wavelengths, self.nx, self.ny = self.intensity_data.shape
+        self.n_wavelengths, self.nx, self.ny = self.intensity_grid.shape
         
         # Validate input dimensions
         if len(self.wavelength_grid) != self.n_wavelengths:
@@ -144,7 +144,7 @@ class GridSource(source.ChaoticSource):
         if jnp.isscalar(nu):
             # Single frequency
             freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
-            intensity_map = self.intensity_data[freq_idx, :, :]
+            intensity_map = self.intensity_grid[freq_idx, :, :]
             
             # Transform coordinates and interpolate directly
             if np.ndim(n_hat) == 1:
@@ -341,7 +341,7 @@ class GridSource(source.ChaoticSource):
         freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
         # Always compute FFT functionally using spatial gridding
-        intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :])
+        intensity_fft = _compute_map_fft(self.intensity_grid[freq_idx, :, :])
 
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
@@ -382,7 +382,7 @@ class GridSource(source.ChaoticSource):
         baseline_perp = baseline[:2]
         
         # Step 1: Calculate |V|² on the native grid
-        intensity_fft = _compute_map_fft(self.intensity_data[freq_idx, :, :])
+        intensity_fft = _compute_map_fft(self.intensity_grid[freq_idx, :, :])
         v_squared_grid = jnp.abs(intensity_fft)**2
         
         # Step 2: Calculate the gradient of |V|² in spatial frequency space
@@ -576,7 +576,7 @@ class GridSource(source.ChaoticSource):
         
         # Sum intensity over spatial dimensions and multiply by pixel area
         # intensity_data is in [W m⁻² Hz⁻¹ sr⁻¹], so multiplying by sr gives [W m⁻² Hz⁻¹]
-        flux_spectrum = np.sum(self.intensity_data, axis=(1, 2)) * pixel_area_sr
+        flux_spectrum = np.sum(self.intensity_grid, axis=(1, 2)) * pixel_area_sr
         
         return flux_spectrum
 
@@ -655,6 +655,7 @@ class GridSource(source.ChaoticSource):
     def create_grid_source_from_files(wave_grid_file: str = "../data/WaveGrid.npy",
                                 flux_file: str = "../data/Phase0Flux.npy",
                                 pixel_scale_m: float = None,
+                                wavelength_scale: float = None,
                                 distance: float = 204379200000000.0,
                                 phi_B: float = 0.0, padfactor=1) -> "GridSource":
         """
@@ -682,7 +683,8 @@ class GridSource(source.ChaoticSource):
         """
         # Load the data files
         wavelength_grid = np.flip(np.load(wave_grid_file))  # [Angstrom]
-        flux_grid = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²/Å] - 3D array
+        flux_grid = np.flip(np.load(flux_file), axis=0)  # [erg/s/cm²] - 3D array
+        flux_grid = flux_grid/wavelength_scale # [erg/s/cm²/Å] - 3D array
         
         # Check for duplicate values
         if len(wavelength_grid) != len(np.unique(wavelength_grid)):
@@ -695,6 +697,7 @@ class GridSource(source.ChaoticSource):
         # Default pixel scale for SN2011fe if not provided
         if pixel_scale_m is None:
             pixel_scale_m = 3200. * 20 * 24 * 3600  # Spatial scale in km/s per pixel * time since explosion (20 days)
+
 
         # Padded grid
         if padfactor > 1:
@@ -730,12 +733,14 @@ class GridSource(source.ChaoticSource):
         
         # SN2011fe specific pixel scale
         pixel_scale_m = 3200 * 3600 * 24 * 20 * 1000 # patial scale in m/s per pixel * time since explosion (20 days)
+        wavelength_scale = 200
 
         # Call the general factory method
         return GridSource.create_grid_source_from_files(
             wave_grid_file=wave_grid_file,
             flux_file=flux_file,
             pixel_scale_m=pixel_scale_m,
+            wavelength_scale = 200,
             distance=distance,
             phi_B=phi_B,
             padfactor=4
