@@ -315,7 +315,7 @@ def plot_visibility_calculations():
         
         # Estimate source angular size from intensity profile
         # Use the pixel scale as a rough estimate of angular size
-        theta_estimate = source.pixel_scale() * 6.2  # Rough estimate
+        theta_estimate = source.pixel_scale() * 6.5  # Rough estimate
 
         # print(source.pixel_scale, theta_estimate, 1.22*wavelength/source.pixel_scale)
 

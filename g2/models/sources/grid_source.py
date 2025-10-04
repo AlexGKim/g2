@@ -216,8 +216,13 @@ class GridSource(source.ChaoticSource):
             wavelength = c / nu_0
             
             # Apply phi_B rotation to baseline
-            cos_phi_B = jnp.cos(params['phi_B'])
-            sin_phi_B = jnp.sin(params['phi_B'])
+            if 'phi_B' in params:
+                cos_phi_B = jnp.cos(params['phi_B'])
+                sin_phi_B = jnp.sin(params['phi_B'])
+            else:
+                cos_phi_B = 1.
+                sin_phi_B = 0.
+
             baseline_rotated = jnp.array([
                 coords[0] * cos_phi_B + coords[1] * sin_phi_B,
                 -coords[0] * sin_phi_B + coords[1] * cos_phi_B
@@ -611,3 +616,16 @@ class GridSource(source.ChaoticSource):
             phi_B=phi_B,
             padfactor=4
         )
+
+    @staticmethod
+    def getUniformDisk():
+        n = 40
+        wavelength_grid = np.array([3000, 10000])
+        flux_grid = np.zeros((2,n,n))
+        for i in range(n):
+            for j in range(n):
+                if ((i-n//2)**2 + (j-n//2)**2< 25):
+                    flux_grid[:,i,j] = 1e31
+        pixel_scale_m = 3200 * 3600 * 24 * 20 * 1000 # patial scale in m/s per pixel * time since explosion (20 days)
+        distance = 204379200000000.0             
+        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, distance)

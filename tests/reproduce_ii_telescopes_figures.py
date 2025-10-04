@@ -53,8 +53,11 @@ def get_sedona_source():
     """Get the SEDONA SN2011fe source using GridSource.getSN2011feSource"""
     try:
         # Use the factory method to get SN2011fe source
-        source = GridSource.getSN2011feSource(distance = cosmo.luminosity_distance(0.004).to(u.m).value)
-        return source, "SEDONA SN2011fe"
+        # source = GridSource.getSN2011feSource(distance = cosmo.luminosity_distance(0.004).to(u.m).value)
+        # return source, "SEDONA SN2011fe"
+        source = GridSource.getUniformDisk()
+        return source, "UniformDisk"
+
     except Exception as e:
         print(f"Error creating SEDONA source: {e}")
         return None, "Error"
@@ -191,7 +194,7 @@ def reproduce_figure_6():
         c = 2.99792458e8  # Speed of light
         
         # Estimate source angular size (same as working version)
-        theta_estimate = source.pixel_scale() * 6.2  # Rough estimate
+        theta_estimate = source.pixel_scale() * 6.5  # Rough estimate
         
         # Set up zeta grid (dimensionless parameter)
         zeta_max = 10
@@ -228,11 +231,15 @@ def reproduce_figure_6():
                         V_squared_map[j,k] = 0.0
             
             # Plot V² map with logarithmic scale
-            # Convert baseline lengths back to km and apply wavelength scaling for display
-            # The paper uses units of [km][λ/5000Å]
+            # Use the same scaling approach as reproduce_figure_9 (which works correctly)
+            # Set up u-v coordinate grid in km with wavelength scaling
+            u_max = 10  # km
+            v_max = 10  # km
+            
+            # Apply wavelength scaling factor for display units [km][λ/5000Å]
             scale_factor = actual_wave / 5000.0  # λ/5000Å scaling
-            u_max_scaled = np.max(baseline_lengths) / 1000 * scale_factor
-            v_max_scaled = np.max(baseline_lengths) / 1000 * scale_factor
+            u_max_scaled = u_max * scale_factor
+            v_max_scaled = v_max * scale_factor
             
             im = ax.imshow(V_squared_map, extent=[0, u_max_scaled, 0, v_max_scaled],
                           origin='lower', cmap='viridis',
@@ -279,7 +286,7 @@ def reproduce_figure_7():
         zeta_coords = np.linspace(0.1, zeta_max, 50)
         
         # Estimate source angular size (θ) from pixel scale
-        theta_estimate = source.pixel_scale() * 6.2  # Rough estimate
+        theta_estimate = source.pixel_scale() * 6.5 # Rough estimate
         
         for i, (target_wave, color) in enumerate(zip(target_wavelengths, colors)):
             # Find closest wavelength and frequency
@@ -492,10 +499,11 @@ def reproduce_figure_9():
                         for bl in baseline_list:
                             # Get the Jacobian for this baseline
                             total_fisher  = total_fisher + fisher_matrix(source, nu_0, bl, baseline_observation)
-
-                        inv_total_fisher = np.linalg.inv(total_fisher)
-                        
-                        SNR_map[j,k] = V_squared / np.sqrt(inv_total_fisher[0,0])
+                        try:
+                            inv_total_fisher = np.linalg.inv(total_fisher)  
+                            SNR_map[j,k] = V_squared / np.sqrt(inv_total_fisher[0,0])
+                        except:
+                            SNR_map[j,k] = 0
                     else:
                         SNR_map[j,k] = 0.0
 
@@ -503,7 +511,7 @@ def reproduce_figure_9():
             # Plot SNR map
             # Use appropriate normalization for the new SNR calculation
             vmax = np.percentile(SNR_map[SNR_map > 0], 95) if np.any(SNR_map > 0) else 1.0
-            vmin = np.percentile(SNR_map[SNR_map > 0], 5) if np.any(SNR_map > 0) else 1e-2
+            vmin = np.percentile(SNR_map[SNR_map > 0], 50) if np.any(SNR_map > 0) else 1e-2
             
             im = ax.imshow(SNR_map, extent=[-u_max, u_max, -v_max, v_max],
                             origin='lower', cmap='viridis',
@@ -520,7 +528,6 @@ def reproduce_figure_9():
             ax.text(0.05, 0.95, config_name, transform=ax.transAxes,
                     verticalalignment='top', color='white', fontweight='bold')
             
-            plt.show()
             # Add colorbar for the last subplot in each row without affecting plot size
             if i == len(target_wavelengths) - 1:
                 from mpl_toolkits.axes_grid1 import make_axes_locatable
