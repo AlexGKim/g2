@@ -53,10 +53,10 @@ def get_sedona_source():
     """Get the SEDONA SN2011fe source using GridSource.getSN2011feSource"""
     try:
         # Use the factory method to get SN2011fe source
-        # source = GridSource.getSN2011feSource(distance = cosmo.luminosity_distance(0.004).to(u.m).value)
-        # return source, "SEDONA SN2011fe"
-        source = GridSource.getUniformDisk()
-        return source, "UniformDisk"
+        source = GridSource.getSN2011feSource(distance = cosmo.luminosity_distance(0.004).to(u.m).value)
+        return source, "SEDONA SN2011fe"
+        # source = GridSource.getUniformDisk()
+        # return source, "UniformDisk"
 
     except Exception as e:
         print(f"Error creating SEDONA source: {e}")
