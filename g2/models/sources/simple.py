@@ -9,6 +9,7 @@ from functools import partial
 from scipy.special import j1, jv
 
 from ..base.source import ChaoticSource
+from ..core import Observation
 
 
 # @custom_jvp
@@ -386,6 +387,221 @@ class UniformDisk(ChaoticSource):
         # Return as complex number (phase is zero for symmetric disk)
         return V_value + 0.0j
 
+class UniformDiskFixR(ChaoticSource):
+    """
+    Uniform circular disk source implementation.
+    
+    Represents a circular source with uniform surface brightness. This is
+    a common model for stellar disks and other approximately circular
+    astronomical objects.
+    
+    The intensity distribution is:
+        I(ν, n̂) = I₀
+    
+    where I₀ is the surface brightness and θ is the angular radius.
+    
+    Parameters
+    ----------
+    flux_density : float
+        Total flux density in W m⁻² Hz⁻¹.
+    radius : float
+        Angular radius in radians.
+        
+    Attributes
+    ----------
+    flux_density : float
+        Total flux density of the disk.
+    radius : float
+        Physical radius of the disk.
+    surface_brightness : float
+        Uniform surface brightness I₀ = F_ν/(πθ²).
+        
+    Examples
+    --------
+    >>> # Create a disk with 2 milliarcsecond radius
+    >>> disk = UniformDisk(flux_density=1e-26, radius=1e-8)  # ~2 mas
+    >>> print(f"Surface brightness: {disk.surface_brightness:.2e} W/m²/Hz/sr")
+    >>> 
+    >>> # Calculate visibility for different baselines
+    >>> for B in [10, 100, 1000]:  # meters
+    >>>     baseline = np.array([B, 0.0, 0.0])
+    >>>     vis = disk.visibility(5e14, baseline)
+    >>>     print(f"B={B}m: \\V\\|={abs(vis):.3f}")
+    """
+    
+    def __init__(self, spectral_exitance: float, radius_m: float, distance: float):
+        """
+        Initialize uniform disk source.
+        
+        Parameters
+        ----------
+        spectral_exitance : float
+            Total flux density in W m⁻² Hz⁻¹.
+        radius : float
+            Angular radius in radians.
+        """
+        self.spectral_exitance = spectral_exitance
+        self.radius_m = radius_m
+        self.distance = distance
+
+        # Calculate uniform surface brightness
+        # self.surface_brightness = flux_density / (np.pi * radius_m**2)
+
+    def get_params(self) -> Dict[str, Any]:
+        """Extract parameters as a dictionary"""
+        return {
+            # 'flux_density': self.flux_density,
+            # 'radius': self.radius
+            's' : 1
+        }
+
+    def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
+        """
+        Calculate uniform disk intensity.
+        
+        Returns constant surface brightness inside the disk radius,
+        zero outside.
+        
+        Parameters
+        ----------
+        nu : float or array_like
+            Frequency in Hz (not used for uniform disk).
+        n_hat : array_like, shape (2,)
+            Sky direction in radians.
+            
+        Returns
+        -------
+        intensity : float
+            Specific intensity in W m⁻² Hz⁻¹ sr⁻¹.
+        """
+        if params is None:
+            params = self.get_params()
+
+        # Divide spectra existance by spherical surface and conversion between surface and solid angle
+        distance = params['s']*self.distance
+        r = jnp.sqrt(n_hat[0]**2 + n_hat[1]**2)
+        return self.spectral_exitance / 4*np.pi if r <= self.radius_m/distance else 0.0
+    
+    def specific_flux(self, nu: float) -> float:
+        """
+        Calculate total flux (constant for uniform disk).
+        
+        Parameters
+        ----------
+        nu : float
+            Frequency in Hz (not used).
+            
+        Returns
+        -------
+        flux : float
+            Total flux density in W m⁻² Hz⁻¹.
+        """
+        intensity = self.intensity()
+        radius_rad = self.radius_m/self.distance
+        return intensity * np.pi*(radius_rad)**2
+    
+    def V(self, nu_0: float, baseline: np.ndarray, params = None) -> complex:
+        """
+        Analytical visibility function V for uniform disk.
+        
+        For a uniform circular disk, the normalized visibility function
+        is given by the Airy function:
+        
+            V(u) = 2J₁(2πuθ) / (2πuθ)
+        
+        where J₁ is the first-order Bessel function, u = \\|B_⊥\\|/λ is the
+        spatial frequency, and θ is the disk radius.
+        
+        Parameters
+        ----------
+        nu_0 : float
+            Central frequency in Hz.
+        baseline : array_like, shape (3,)
+            Baseline vector in meters.
+        grid_size : int, optional
+            Not used (kept for interface compatibility).
+        sky_extent : float, optional
+            Not used (kept for interface compatibility).
+            
+        Returns
+        -------
+        V : complex
+            Normalized visibility function (real-valued for symmetric disk).
+            
+        Notes
+        -----
+        This analytical result is exact and should match the FFT calculation
+        in the limit of fine grid sampling. It's much faster than the FFT
+        method and doesn't suffer from discretization artifacts.
+        
+        The first zero of the visibility function occurs at:
+            u = 1.22/(2θ)  or  \\|B_⊥\\| = 1.22λ/(2θ)
+        
+        This corresponds to the classical resolution limit for circular apertures.
+        """
+        # from scipy.special import j1
+
+        if params is None:
+            params = self.get_params()
+        
+        # Physical constants
+        c = 2.99792458e8  # Speed of light in m/s
+        wavelength = c / nu_0
+        
+        # Extract perpendicular baseline components
+        baseline_perp = baseline[:2]
+        baseline_length = jnp.linalg.norm(baseline_perp)
+        
+        # Calculate spatial frequency u = \\|B_⊥\\|/λ
+        u = baseline_length / wavelength
+        
+        radius_rad = self.radius_m / (params['s'] * self.distance)
+        # Calculate argument for Bessel function: zeta = 2πuθ
+        zeta = np.pi * u * (2 * radius_rad)
+        # Handle special case x=0 (zero baseline or zero radius)
+        V_value = jnp.where(zeta == 0, 1.0, 2 * _j1(zeta) / zeta)
+        # if zeta == 0:
+        #     V_value = 1.0
+        # else:
+        #     # Airy function: V(u) = 2J₁(x)/x
+        #     # V_value = 2 * j1(x) / x
+        #     V_value = 2 * _j1(zeta) / zeta   
+        # Return as complex number (phase is zero for symmetric disk)
+        return V_value + 0.0j
+
+    def SNR_s(self, nu_0: float, baseline: np.ndarray, observation: Observation, params = None) -> complex:
+        """
+        
+        """
+        # from scipy.special import j1
+
+        if params is None:
+            params = self.get_params()
+        
+        # Physical constants
+        c = 2.99792458e8  # Speed of light in m/s
+        wavelength = c / nu_0
+        
+        # Extract perpendicular baseline components
+        baseline_perp = baseline[:2]
+        baseline_length = jnp.linalg.norm(baseline_perp)
+        
+        # Calculate spatial frequency u = \\|B_⊥\\|/λ
+        u = baseline_length / wavelength
+        
+        radius_rad = self.radius_m / (params['s'] * self.distance)
+        # Calculate argument for Bessel function: zeta = 2πuθ
+        zeta = np.pi * u * (2 * radius_rad)
+        # Handle special case x=0 (zero baseline or zero radius)
+        snr_s = 2 * inverse_noise(self, nu_0, observation) * ( 2* jv(1,zeta)/zeta * (jv(0, zeta)  - jv(2, zeta) - jv(1, zeta)))
+        # if zeta == 0:
+        #     V_value = 1.0
+        # else:
+        #     # Airy function: V(u) = 2J₁(x)/x
+        #     # V_value = 2 * j1(x) / x
+        #     V_value = 2 * _j1(zeta) / zeta   
+        # Return as complex number (phase is zero for symmetric disk)
+        return snr_s
 
 class MultiPoint(ChaoticSource):
     """
