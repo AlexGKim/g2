@@ -9,7 +9,7 @@ from functools import partial
 from scipy.special import j1, jv
 
 from ..base.source import ChaoticSource
-from ..core import Observation, inverse_noise
+from ...core import Observation, inverse_noise
 
 
 # @custom_jvp
@@ -474,11 +474,9 @@ class UniformDiskFixR(ChaoticSource):
         intensity : float
             Specific intensity in W m⁻² Hz⁻¹ sr⁻¹.
         """
-        if params is None:
-            params = self.get_params()
 
         # Divide spectra existance by spherical surface and conversion between surface and solid angle
-        distance = params['s']*self.distance
+        distance = self.distance
         r = jnp.sqrt(n_hat[0]**2 + n_hat[1]**2)
         return self.spectral_exitance / (4*np.pi) if r <= self.radius_m/distance else 0.0
     
@@ -566,7 +564,7 @@ class UniformDiskFixR(ChaoticSource):
         #     # V_value = 2 * j1(x) / x
         #     V_value = 2 * _j1(zeta) / zeta   
         # Return as complex number (phase is zero for symmetric disk)
-        return V_value + 0.0j
+        return V_value
 
     def SNR_s(self, nu_0: float, baseline: np.ndarray, observation: Observation, params = None) -> complex:
         """

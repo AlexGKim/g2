@@ -10,41 +10,38 @@ This test suite validates the functionality of all source classes including:
 
 import unittest
 import numpy as np
-from g2.models.sources import AbstractSource, ChaoticSource
+from g2.models.base import AbstractSource, ChaoticSource
 from g2.models.sources.simple import UniformDiskFixR
 from g2.models.sources.grid_source import GridSource
 from g2.core import Observation
+from scipy.special import j1, jv
 
 class TestUniformDisk(unittest.TestCase):
     """Test cases for UniformDisk class."""
     
     def setUp(self):
         """Set up test fixtures for source."""
-        self.flux_density = 1e-26  # W/m²/Hz
-        self.radius_m = 3200 * 3600 * 24 * 20 * 1000 * 5
-        self.distance = 204379200000000.0
-        self.radius_rad = self.radius_m/self.distance
+        self.spectral_exitance = 1e-26  # W/m²/Hz
+        self.radius_arcsec = 1e-5
+        self.radius_rad = self.radius_arcsec / 3600 * np.pi /180
+        self.radius_m = 1. # m
+        self.distance = 1/ self.radius_rad # m.
 
-        self.disk = UniformDiskFixR(self.flux_density, self.radius_m, self.distance)
+        self.disk = UniformDiskFixR(self.spectral_exitance, self.radius_m, self.distance)
         # self.griddisk = GridSource.getUniformDisk()
-
+        
         """Set up test fixtures for baseline"""
         self.nu_0 = 5e14  # 600 nm
         c = 2.99792458e8  # Speed of light in m/s
-        lambda_0 = c / nu_0  # Wavelength in meters
-
-        # Baseline distance at the resolution limit for a uniform disk source
-        D_res = (1.22 * lambda_0  / (2 * self.radius_rad))
+        self.lam = c / self.nu_0  # Wavelength in meters
+        self.L_res = 1.22 * self.lam / (2 * self.radius_rad)
 
         # Calculate inverse noise for a baseline measurement half the resolution limit
-        baseline = np.array([D_res/2, -D_res/1.5, 0.0])
-        baseline2 = np.array([D_res*1.1, -D_res*1.5, 0.0])
+        baseline = np.array([self.L_res, 0, 0.0])
+        baseline2 = np.array([self.L_res*.5, -self.L_res*.3, 0.0])
         self.baselines = np.array([baseline, baseline*1.1, baseline*0.9, baseline2, baseline2*0.9 ])
     
-
         """Set up test fixtures for observation"""
-
-
         # Observational parameters
         telescope_area = 1.0  # m²
         integration_time = 3600  # 1 hour
@@ -63,18 +60,30 @@ class TestUniformDisk(unittest.TestCase):
         self.assertIsInstance(self.disk, UniformDiskFixR)
         self.assertIsInstance(self.disk, ChaoticSource)
         self.assertIsInstance(self.disk, AbstractSource)
+
+        self.assertEqual(self.disk.spectral_exitance, self.spectral_exitance)
+        self.assertEqual(self.disk.radius_m, self.radius_m)
+        self.assertEqual(self.disk.distance, self.distance)
         
-        self.assertEqual(self.disk.flux_density, self.flux_density)
-        self.assertEqual(self.disk.radius, self.radius)
+        # # Check surface brightness calculation
+        # expected_brightness = self.flux_density / (np.pi * self.radius**2)
+        # self.assertAlmostEqual(self.disk.surface_brightness, expected_brightness)
         
-        # Check surface brightness calculation
-        expected_brightness = self.flux_density / (np.pi * self.radius**2)
-        self.assertAlmostEqual(self.disk.surface_brightness, expected_brightness)
+    def test_V(self):
+        """Test total flux is conserved."""
+        for baseline in self.baselines:
+            u = baseline[0]
+            v = baseline[1]
+            rho = np.sqrt(u**2 + v**2)
+            xi = np.pi * rho * (2*self.radius_rad) / self.lam
         
-    # def test_total_flux(self):
-    #     """Test total flux is conserved."""
-    #     flux = self.disk.total_flux(self.nu_0)
-    #     self.assertAlmostEqual(flux, self.flux_density, places=10)
+            if rho ==0:
+                V=1.
+            else:
+                V=2 * j1(xi)/xi
+            print(xi, V)
+            self.assertAlmostEqual(
+                self.disk.V(self.nu_0, baseline), V, places=6)
         
     # def test_intensity_inside_disk(self):
     #     """Test intensity inside the disk."""
