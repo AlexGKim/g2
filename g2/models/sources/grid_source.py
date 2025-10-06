@@ -323,8 +323,8 @@ class GridSource(source.ChaoticSource):
         baseline_perp = baseline[:2]
         
         # The sample frequencies of the Fourier transform in angular space
-        u_coords = (fftfreq(self.nx, d=self.pixel_scale_m/(params['s']*self.distance)))
-        v_coords = (fftfreq(self.ny, d=self.pixel_scale_m/(params['s']*self.distance)))
+        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m/(params['s']*self.distance)))
+        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m/(params['s']*self.distance)))
 
         # wavelength
         c = 2.99792458e8  # m/s
