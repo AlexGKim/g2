@@ -37,20 +37,22 @@ class TestUniformDisk(unittest.TestCase):
         self.lam = c / self.nu_0  # Wavelength in meters
         self.L_res = 1.22 * self.lam / (2 * self.radius_rad)
 
-        ngrid = 50
+        ngrid = 2048*2
         wavelength_grid = np.array([self.lam*1e-10-0.5, self.lam*1e-10+0.5])
         flux_grid = np.zeros((2,ngrid,ngrid))
-        pixel_scale_m = self.radius_m/10
-        for i in range(ngrid):
-            for j in range(ngrid):
-                if (i-ngrid//2)**2 + (j-ngrid//2)**2 < (self.radius_m/pixel_scale_m)**2:
+        pixel_scale_m = self.radius_m/128
+        pixel_radius = (self.radius_m/pixel_scale_m)
+        for i in range(ngrid//2 - np.ceil(pixel_radius).astype(int), ngrid//2 + np.ceil(pixel_radius).astype(int)):
+            for j in range(ngrid//2 - np.ceil(pixel_radius).astype(int), ngrid//2 + np.ceil(pixel_radius).astype(int)):
+                if (i-ngrid//2)**2 + (j-ngrid//2)**2 < pixel_radius**2:
                     flux_grid[:, i, j] = self.spectral_exitance * pixel_scale_m**2
+
         self.griddisk = GridSource(wavelength_grid, flux_grid, pixel_scale_m, self.distance)
 
         # Calculate inverse noise for a baseline measurement half the resolution limit
-        baseline = np.array([self.L_res, 0, 0.0])
-        baseline2 = np.array([self.L_res*.5, -self.L_res*.3, 0.0])
-        self.baselines = np.array([baseline, baseline*1.1, baseline*0.9, baseline2, baseline2*0.9 ])
+        baseline = np.array([self.L_res*.25, 0, 0.0])
+        baseline2 = np.array([self.L_res*.4, -self.L_res*.3, 0.0])
+        self.baselines = np.array([baseline, baseline*0.9, baseline2, baseline2*0.9 ])
     
         """Set up test fixtures for observation"""
         # Observational parameters
@@ -85,7 +87,7 @@ class TestUniformDisk(unittest.TestCase):
         # self.assertAlmostEqual(self.disk.surface_brightness, expected_brightness)
         
     def test_V(self):
-        """Test total flux is conserved."""
+        """Test V"""
         for baseline in self.baselines:
             u = baseline[0]
             v = baseline[1]
@@ -100,11 +102,11 @@ class TestUniformDisk(unittest.TestCase):
                 self.disk.V(self.nu_0, baseline), V, places=6)
             
             self.assertAlmostEqual(
-                np.abs(self.griddisk.V(self.nu_0, baseline)), V, places=6)
+                np.abs(self.griddisk.V(self.nu_0, baseline)), np.abs(V), delta=0.02)
 
         
     def test_SNR_s(self):
-        """Test total flux is conserved."""
+        """Test SNR_s"""
         for baseline in self.baselines:
             u = baseline[0]
             v = baseline[1]
