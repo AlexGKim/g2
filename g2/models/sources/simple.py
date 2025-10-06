@@ -590,7 +590,7 @@ class UniformDiskFixR(ChaoticSource):
         # Calculate argument for Bessel function: zeta = 2πuθ
         zeta = np.pi * u * (2 * radius_rad)
         # Handle special case x=0 (zero baseline or zero radius)
-        snr_s = 2 * inverse_noise(self, nu_0, observation) * ( 2* jv(1,zeta)/zeta * (jv(0, zeta)  - jv(2, zeta) - jv(1, zeta)))
+        snr_s = 2 * inverse_noise(self, nu_0, observation) *  4 * np.abs(jv(1,zeta)/zeta * jv(2, zeta))
         # if zeta == 0:
         #     V_value = 1.0
         # else:
