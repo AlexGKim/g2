@@ -13,29 +13,6 @@ from jax.numpy.fft import fft2,fftshift, fftfreq
 from jax import numpy as jnp
 import jax
 
-def _compute_map_fft(intensity_map) -> jnp.ndarray:
-    """
-    Compute 2D FFT of intensity map for visibility calculation.
-    
-    Parameters
-    ----------
-    intensity_map : jnp.ndarray
-        2D intensity map in [W m⁻² Hz⁻¹]
-    wavelength_grid : float
-        Wavelength value (unused, kept for compatibility)
-        
-    Returns
-    -------
-    jnp.ndarray
-        2D FFT of intensity map, normalized by total flux
-    """
-    
-    total_flux = jnp.sum(intensity_map)
-    intensity_fft = fft2(intensity_map / total_flux)
-    intensity_fft = fftshift(intensity_fft)
-    
-    return intensity_fft
-
 
 class GridSource(source.ChaoticSource):
     """
@@ -317,7 +294,9 @@ class GridSource(source.ChaoticSource):
         freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
         # Always compute FFT functionally using spatial gridding
-        intensity_fft = _compute_map_fft(self.intensity_grid[freq_idx, :, :])
+        total_flux = jnp.sum(self.intensity_grid[freq_idx, :, :])
+        intensity_fft = fft2(self.intensity_grid[freq_idx, :, :] / total_flux)
+        intensity_fft = fftshift(intensity_fft)
 
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
@@ -372,29 +351,37 @@ class GridSource(source.ChaoticSource):
         flux_norm = self.intensity_grid[freq_idx, :, :]
         flux_norm = flux_norm / jnp.sum(flux_norm)
         
-        # Create padded array (without padding as requested)
-        paddedarray = flux_norm
-        
         # Calculate gamma (FFT of normalized intensity)
-        gamma = jax.numpy.fft.fft2(paddedarray)
+        gamma = fft2(flux_norm)
+        gamma = fftshift(gamma)
         
         # Calculate coordinate grids for derivatives (following sedona algorithm)
         # theta represents pixel coordinates relative to center
-        theta_x = jnp.arange(paddedarray.shape[1]) - paddedarray.shape[1] // 2 + 0.5
-        theta_y = jnp.arange(paddedarray.shape[0]) - paddedarray.shape[0] // 2 + 0.5
-        
+        theta_x = jnp.arange(flux_norm.shape[1]) - flux_norm.shape[1] // 2 + 0.5
+        theta_y = jnp.arange(flux_norm.shape[0]) - flux_norm.shape[0] // 2 + 0.5
+        theta_x = theta_x * self.pixel_scale_m / (params['s']* self.distance)
+        theta_y = theta_y * self.pixel_scale_m / (params['s']* self.distance)
+
+
         # Calculate derivatives of gamma with respect to u and v coordinates
         # Following sedona: dgammau = -2j*pi * fft2(paddedarray * theta[:,None])
-        dgammau = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_y[:, None])
-        dgammav = -2j * jnp.pi * jax.numpy.fft.fft2(paddedarray * theta_x[None, :])
-        
-        # Get frequency coordinates for spatial frequency space
-        u = jax.numpy.fft.fftfreq(paddedarray.shape[0])
-        v = jax.numpy.fft.fftfreq(paddedarray.shape[1])
+        dgammau = -2j * jnp.pi * jax.numpy.fft.fft2(flux_norm * theta_y[:, None])
+        dgammav = -2j * jnp.pi * jax.numpy.fft.fft2(flux_norm * theta_x[None, :])
+        dgammau = fftshift(dgammau)
+        dgammav = fftshift(dgammav)
+
+        # The sample frequencies of the Fourier transform in angular space
+        u = fftshift(fftfreq(self.nx, d=self.pixel_scale_m/(params['s']*self.distance)))
+        v = fftshift(fftfreq(self.ny, d=self.pixel_scale_m/(params['s']*self.distance)))
+
+        # # Get frequency coordinates for spatial frequency space
+        # u = jax.numpy.fft.fftfreq(flux_norm.shape[0])
+        # v = jax.numpy.fft.fftfreq(flux_norm.shape[1])
         
         # Calculate derivatives in parameter space (following sedona algorithm)
         # dgammas corresponds to derivative with respect to size parameter
         # dgammaphi corresponds to derivative with respect to rotation parameter
+
         dgammas = -(u[:, None] * dgammau + v[None, :] * dgammav) / params['s']
         dgammaphi = -v[None, :] * dgammau + u[:, None] * dgammav
 
@@ -440,9 +427,16 @@ class GridSource(source.ChaoticSource):
         jacobian_grid = self._V_squared_jacobian_grid(nu_0, params)
         
         baseline_perp = baseline[:2]
-        # Use common coordinate transformation and interpolation methods
-        u_target, v_target = self._transform_coordinates(baseline_perp, params, 'baseline', nu_0)
-        
+
+        # The sample frequencies of the Fourier transform in angular space
+        u_coords = fftshift(fftfreq(self.nx, d=self.pixel_scale_m/(params['s']*self.distance)))
+        v_coords = fftshift(fftfreq(self.ny, d=self.pixel_scale_m/(params['s']*self.distance)))
+
+        # wavelength
+        c = 2.99792458e8  # m/s
+        lambda_0 = c / nu_0
+        idx = np.argmin(np.abs(u_coords - baseline_perp[0]/lambda_0))
+        idy = np.argmin(np.abs(v_coords - baseline_perp[1]/lambda_0))
         
         # Calculate Jacobian using Fisher matrix elements
         # Based on sedona algorithm: F00 corresponds to size parameter, F11 to rotation parameter
@@ -451,12 +445,12 @@ class GridSource(source.ChaoticSource):
         # For pixel_scale_rad parameter (corresponds to size parameter "s" in sedona)
         if 's' in params:
             # Use F00 for size parameter derivative (dgammas corresponds to size changes)
-            jacobian['s'] = self._interpolate_grid(jacobian_grid['s'], u_target, v_target, 'fft')
+            jacobian['s'] = jacobian_grid['s'][idx,idy]
         
         # For phi_B parameter (corresponds to rotation parameter "phi" in sedona)
         if 'phi_B' in params:
             # Use F11 for rotation parameter derivative (dgammaphi corresponds to rotation changes)
-            jacobian['phi_B'] = self._interpolate_grid(jacobian_grid['phi_B'], u_target, v_target, 'fft')
+            jacobian['phi_B'] = jacobian_grid['phi_B'][idx,idy]
         
         return jacobian
     

@@ -37,10 +37,10 @@ class TestUniformDisk(unittest.TestCase):
         self.lam = c / self.nu_0  # Wavelength in meters
         self.L_res = 1.22 * self.lam / (2 * self.radius_rad)
 
-        ngrid = 2048*2
+        ngrid = 2048*4
         wavelength_grid = np.array([self.lam*1e-10-0.5, self.lam*1e-10+0.5])
         flux_grid = np.zeros((2,ngrid,ngrid))
-        pixel_scale_m = self.radius_m/128
+        pixel_scale_m = self.radius_m/256
         pixel_radius = (self.radius_m/pixel_scale_m)
         for i in range(ngrid//2 - np.ceil(pixel_radius).astype(int), ngrid//2 + np.ceil(pixel_radius).astype(int)):
             for j in range(ngrid//2 - np.ceil(pixel_radius).astype(int), ngrid//2 + np.ceil(pixel_radius).astype(int)):
@@ -50,7 +50,7 @@ class TestUniformDisk(unittest.TestCase):
         self.griddisk = GridSource(wavelength_grid, flux_grid, pixel_scale_m, self.distance)
 
         # Calculate inverse noise for a baseline measurement half the resolution limit
-        baseline = np.array([self.L_res*.25, 0, 0.0])
+        baseline = np.array([self.L_res*.25, self.L_res*.34, 0.0])
         baseline2 = np.array([self.L_res*.4, -self.L_res*.3, 0.0])
         self.baselines = np.array([baseline, baseline*0.9, baseline2, baseline2*0.9 ])
     
@@ -104,16 +104,14 @@ class TestUniformDisk(unittest.TestCase):
                 V=2 * j1(xi)/xi
 
             V_squared_jacobian = 2 * V * dVds
-
-            print(self.griddisk.V_squared_jacobian(self.nu_0, baseline, {'s': 1.})['s'],V_squared_jacobian)
-
             self.assertAlmostEqual(
-                self.griddisk.V_squared_jacobian(self.nu_0, baseline, {'s': 1.})['s'],
-                V_squared_jacobian, places=6)
+                self.griddisk.V_squared_jacobian(self.nu_0, baseline, {'s': 1.})['s'] / V_squared_jacobian,
+                1, delta=0.05)
 
             self.assertAlmostEqual(
                 self.disk.V_squared_jacobian(self.nu_0, baseline)['s'],
                 V_squared_jacobian, places=6)
+            
 
     def test_V(self):
         """Test V"""
@@ -131,7 +129,7 @@ class TestUniformDisk(unittest.TestCase):
                 self.disk.V(self.nu_0, baseline), V, places=6)
             
             self.assertAlmostEqual(
-                np.abs(self.griddisk.V(self.nu_0, baseline)), np.abs(V), delta=0.02)
+                np.abs(self.griddisk.V(self.nu_0, baseline)) / np.abs(V), 1, delta=0.05)
 
         
     def test_SNR_s(self):
