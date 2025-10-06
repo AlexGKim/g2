@@ -108,6 +108,10 @@ class GridSource(source.ChaoticSource):
         # Store frequency range for reference (using frequency grid directly)
         self.freq_min = np.min(self.frequency_grid)
         self.freq_max = np.max(self.frequency_grid)
+
+        # The sample frequencies of the Fourier transform in physical space
+        self.u_coords = (fftfreq(self.nx, d=self.pixel_scale_m))
+        self.v_coords = (fftfreq(self.ny, d=self.pixel_scale_m))
     
     def pixel_scale(self) -> float:
         """
@@ -318,12 +322,23 @@ class GridSource(source.ChaoticSource):
         # Extract perpendicular baseline components (ignore Bz)
         baseline_perp = baseline[:2]
         
+        # The sample frequencies of the Fourier transform in angular space
+        u_coords = (fftfreq(self.nx, d=self.pixel_scale_m/(params['s']*self.distance)))
+        v_coords = (fftfreq(self.ny, d=self.pixel_scale_m/(params['s']*self.distance)))
+
+        # wavelength
+        c = 2.99792458e8  # m/s
+        lambda_0 = c / nu_0
+        idx = np.argmin(np.abs(u_coords - baseline_perp[0]/lambda_0))
+        idy = np.argmin(np.abs(v_coords - baseline_perp[1]/lambda_0))
+
+        return intensity_fft[idx,idy]
         # Use common coordinate transformation for visibility
-        u_freq_meters, v_freq_meters = self._transform_coordinates(
-            baseline_perp, params, 'baseline', nu_0)
+        # u_freq_meters, v_freq_meters = self._transform_coordinates(
+        #     baseline_perp, params, 'baseline', nu_0)
         
         # Use common interpolation method
-        return self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
+        # return self._interpolate_grid(intensity_fft, u_freq_meters, v_freq_meters, 'fft')
 
     def _V_squared_jacobian_grid(self, nu_0: float, params: dict = None):
         """
@@ -617,15 +632,17 @@ class GridSource(source.ChaoticSource):
             padfactor=4
         )
 
-    @staticmethod
-    def getUniformDisk():
-        n = 40
-        wavelength_grid = np.array([3000, 10000])
-        flux_grid = np.zeros((2,n,n))
-        for i in range(n):
-            for j in range(n):
-                if ((i-n//2)**2 + (j-n//2)**2< 25):
-                    flux_grid[:,i,j] = 1e31
-        pixel_scale_m = 3200 * 3600 * 24 * 20 * 1000 # patial scale in m/s per pixel * time since explosion (20 days)
-        distance = 204379200000000.0             
-        return GridSource(wavelength_grid, flux_grid, pixel_scale_m, distance)
+    # @staticmethod
+    # def getUniformDisk(spectral_exitance, radius_m, distance, pixel_scale_m):
+    #     npix = 40
+    #     wavelength_grid = np.array([1, 100000])
+
+    #     flux_grid = np.zeros((2,npix,npix))
+    #     for i in range(npix):
+    #         for j in range(npix):
+    #             if ((i-npix//2)**2 + (j-npix//2)**2< (radius_m/pixel_scale_m)**2):
+    #                 flux_grid[:,i,j] = spectral_exitance
+
+    #     pixel_scale_m = 3200 * 3600 * 24 * 20 * 1000 # patial scale in m/s per pixel * time since explosion (20 days)
+    #     distance = 204379200000000.0             
+    #     return GridSource(wavelength_grid, flux_grid, pixel_scale_m, distance)
