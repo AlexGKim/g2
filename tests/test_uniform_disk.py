@@ -86,6 +86,35 @@ class TestUniformDisk(unittest.TestCase):
         # expected_brightness = self.flux_density / (np.pi * self.radius**2)
         # self.assertAlmostEqual(self.disk.surface_brightness, expected_brightness)
         
+    def test_V_squared_jacobian(self):
+        """Test V_squared_jacobian"""
+
+
+        for baseline in self.baselines:
+
+            u = baseline[0]
+            v = baseline[1]
+            rho = np.sqrt(u**2 + v**2)
+            xi = np.pi * rho * (2*self.radius_rad) / self.lam
+
+            dVds = 2 * jv(2,xi)
+            if rho ==0:
+                V=1.
+            else:
+                V=2 * j1(xi)/xi
+
+            V_squared_jacobian = 2 * V * dVds
+
+            print(self.griddisk.V_squared_jacobian(self.nu_0, baseline, {'s': 1.})['s'],V_squared_jacobian)
+
+            self.assertAlmostEqual(
+                self.griddisk.V_squared_jacobian(self.nu_0, baseline, {'s': 1.})['s'],
+                V_squared_jacobian, places=6)
+
+            self.assertAlmostEqual(
+                self.disk.V_squared_jacobian(self.nu_0, baseline)['s'],
+                V_squared_jacobian, places=6)
+
     def test_V(self):
         """Test V"""
         for baseline in self.baselines:
@@ -119,7 +148,10 @@ class TestUniformDisk(unittest.TestCase):
                 # J_0 - J_2 - 2J_1/r = -2 * J_2
                 SNR_s= 2 * inverse_noise(self.disk, self.nu_0, self.obs) * 4 * np.abs(j1(xi)/xi * jv(2,xi))
             self.assertAlmostEqual(
-                self.disk.SNR_s(self.nu_0, baseline, self.obs), SNR_s, places=6)       
+                self.disk.SNR_s(self.nu_0, baseline, self.obs), SNR_s, places=6)
+
+            self.assertAlmostEqual(
+                self.disk.SNR_s(self.nu_0, baseline, self.obs), SNR_s, places=6)
                
 
 if __name__ == '__main__':

@@ -452,7 +452,7 @@ class UniformDiskFixR(ChaoticSource):
         return {
             # 'flux_density': self.flux_density,
             # 'radius': self.radius
-            's' : 1
+            's' : 1.
         }
 
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
@@ -554,16 +554,10 @@ class UniformDiskFixR(ChaoticSource):
         
         radius_rad = self.radius_m / (params['s'] * self.distance)
         # Calculate argument for Bessel function: zeta = 2πuθ
-        zeta = np.pi * u * (2 * radius_rad)
+        zeta = jnp.pi * u * (2 * radius_rad)
         # Handle special case x=0 (zero baseline or zero radius)
         V_value = jnp.where(zeta == 0, 1.0, 2 * _j1(zeta) / zeta)
-        # if zeta == 0:
-        #     V_value = 1.0
-        # else:
-        #     # Airy function: V(u) = 2J₁(x)/x
-        #     # V_value = 2 * j1(x) / x
-        #     V_value = 2 * _j1(zeta) / zeta   
-        # Return as complex number (phase is zero for symmetric disk)
+
         return V_value
 
     def SNR_s(self, nu_0: float, baseline: np.ndarray, observation: Observation, params = None) -> complex:
