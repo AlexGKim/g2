@@ -9,7 +9,7 @@ from functools import partial
 from scipy.special import j1, jv
 
 from ..base.source import ChaoticSource
-from ..core import Observation
+from ..core import Observation, inverse_noise
 
 
 # @custom_jvp
@@ -480,7 +480,7 @@ class UniformDiskFixR(ChaoticSource):
         # Divide spectra existance by spherical surface and conversion between surface and solid angle
         distance = params['s']*self.distance
         r = jnp.sqrt(n_hat[0]**2 + n_hat[1]**2)
-        return self.spectral_exitance / 4*np.pi if r <= self.radius_m/distance else 0.0
+        return self.spectral_exitance / (4*np.pi) if r <= self.radius_m/distance else 0.0
     
     def specific_flux(self, nu: float) -> float:
         """
@@ -496,9 +496,8 @@ class UniformDiskFixR(ChaoticSource):
         flux : float
             Total flux density in W m⁻² Hz⁻¹.
         """
-        intensity = self.intensity()
-        radius_rad = self.radius_m/self.distance
-        return intensity * np.pi*(radius_rad)**2
+
+        return self.spectral_exitance * (self.radius_m / self.distance)**2
     
     def V(self, nu_0: float, baseline: np.ndarray, params = None) -> complex:
         """
