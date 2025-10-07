@@ -194,7 +194,7 @@ def reproduce_figure_6():
         c = 2.99792458e8  # Speed of light
         
         # Estimate source angular size (same as working version)
-        theta_estimate = source.pixel_scale() * 6.5  # Rough estimate
+        theta_estimate = source.pixel_scale() * 6  # Rough estimate
         
         # Set up zeta grid (dimensionless parameter)
         zeta_max = 10

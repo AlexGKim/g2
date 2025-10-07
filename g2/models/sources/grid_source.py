@@ -86,9 +86,6 @@ class GridSource(source.ChaoticSource):
         self.freq_min = np.min(self.frequency_grid)
         self.freq_max = np.max(self.frequency_grid)
 
-        # The sample frequencies of the Fourier transform in physical space
-        self.u_coords = (fftfreq(self.nx, d=self.pixel_scale_m))
-        self.v_coords = (fftfreq(self.ny, d=self.pixel_scale_m))
     
     def pixel_scale(self) -> float:
         """
@@ -359,8 +356,9 @@ class GridSource(source.ChaoticSource):
         # theta represents pixel coordinates relative to center
         theta_x = jnp.arange(flux_norm.shape[1]) - flux_norm.shape[1] // 2 + 0.5
         theta_y = jnp.arange(flux_norm.shape[0]) - flux_norm.shape[0] // 2 + 0.5
-        theta_x = theta_x * self.pixel_scale_m / (params['s']* self.distance)
-        theta_y = theta_y * self.pixel_scale_m / (params['s']* self.distance)
+        pixel_scale_rad = (self.pixel_scale_m / self.distance) / params['s']
+        theta_x = theta_x * pixel_scale_rad
+        theta_y = theta_y * pixel_scale_rad
 
 
         # Calculate derivatives of gamma with respect to u and v coordinates
@@ -371,8 +369,8 @@ class GridSource(source.ChaoticSource):
         dgammav = fftshift(dgammav)
 
         # The sample frequencies of the Fourier transform in angular space
-        u = fftshift(fftfreq(self.nx, d=self.pixel_scale_m/(params['s']*self.distance)))
-        v = fftshift(fftfreq(self.ny, d=self.pixel_scale_m/(params['s']*self.distance)))
+        u = fftshift(fftfreq(self.nx, d=pixel_scale_rad))
+        v = fftshift(fftfreq(self.ny, d=pixel_scale_rad))
 
         # # Get frequency coordinates for spatial frequency space
         # u = jax.numpy.fft.fftfreq(flux_norm.shape[0])
