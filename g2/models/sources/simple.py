@@ -1060,6 +1060,9 @@ class MultiPoint(ChaoticSource):
         if params is None:
             params = self.get_params()
 
+        positions = self.positions[0] + params['positions']
+        positions = np.insert(positions, 0, self.positions[0], axis=0)
+
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
@@ -1071,7 +1074,7 @@ class MultiPoint(ChaoticSource):
         source_fluxes = self.flux_densities * (nu_0 / self.reference_frequency) ** self.spectral_indices
         
         # Calculate phases for each source position
-        phases = 2 * jnp.pi * jnp.dot(params['positions'], baseline_perp) / wavelength
+        phases = -2j * jnp.pi * jnp.dot(positions, baseline_perp) / wavelength
         
         # Find maximum flux for numerical stability
         max_flux = jnp.max(source_fluxes)
@@ -1083,7 +1086,7 @@ class MultiPoint(ChaoticSource):
             log_ratios = jnp.log(source_fluxes / max_flux)
             
             # Calculate stable exponentials: exp(ln(Fᵢ/max(Fᵢ)) + iφᵢ)
-            stable_exponentials = jnp.exp(log_ratios + 1j * phases)
+            stable_exponentials = jnp.exp(log_ratios + phases)
             
             # Sum the stable exponentials
             stable_sum = jnp.sum(stable_exponentials)
