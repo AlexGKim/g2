@@ -1026,10 +1026,10 @@ class MultiPoint(ChaoticSource):
         ref_freq_grad = 0.0
         
         return {
-            'flux_densities': flux_grad,
+            # 'flux_densities': flux_grad,
             'positions': pos_grad,
-            'spectral_indices': spectral_grad,
-            'reference_frequency': ref_freq_grad
+            # 'spectral_indices': spectral_grad,
+            # 'reference_frequency': ref_freq_grad
         }
 
     def V(self, nu_0: float, baseline: jnp.ndarray, params: dict = None) -> complex:
@@ -1061,7 +1061,7 @@ class MultiPoint(ChaoticSource):
             params = self.get_params()
 
         positions = self.positions[0] + params['positions']
-        positions = np.insert(positions, 0, self.positions[0], axis=0)
+        positions = jnp.insert(positions, 0, self.positions[0], axis=0)
 
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s

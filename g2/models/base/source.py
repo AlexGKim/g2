@@ -304,7 +304,7 @@ class AbstractSource(ABC):
         V_squared : float
             Squared visibility magnitude, always real and non-negative.
         """
-        ans = self.V(nu_0, baseline, params) 
+        ans = self.V(nu_0, baseline, params)
         return jnp.abs(ans)**2
     
     def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None):

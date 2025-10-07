@@ -66,32 +66,46 @@ class TestMultiPoint(unittest.TestCase):
 
 
         
-    # def test_V_squared_jacobian(self):
-    #     """Test V_squared_jacobian"""
+    def test_V_squared_jacobian(self):
+        """Test V_squared_jacobian"""
 
+        dx, dy = self.positions[1]-self.positions[0]
+        for baseline in self.baselines:
+            u = baseline[0]/self.lam
+            v = baseline[1]/self.lam
 
-    #     for baseline in self.baselines:
+            phase1 = np.exp(-2j * np.pi * (u * dx + v * dy))
+            total_flux = self.spectral_exitances.sum()
 
-    #         u = baseline[0]
-    #         v = baseline[1]
-    #         rho = np.sqrt(u**2 + v**2)
-    #         xi = np.pi * rho * (2*self.radius_rad) / self.lam
+            # V = self.spectral_exitances[0] + self.spectral_exitances[1] *np.exp(-2j * np.pi * (u * dx + v * dy))
+            # V = V / self.spectral_exitances.sum()
+            V = (self.spectral_exitances[0] + self.spectral_exitances[1] * phase1) / total_flux
 
-    #         dVds = 2 * jv(2,xi)
-    #         if rho ==0:
-    #             V=1.
-    #         else:
-    #             V=2 * j1(xi)/xi
+            # Derivatives with respect to position of source 1
+            dVdx = -2j * np.pi * u * self.spectral_exitances[1] * phase1 / total_flux
+            dVdy = -2j * np.pi * v * self.spectral_exitances[1] * phase1 / total_flux
 
-    #         V_squared_jacobian = 2 * V * dVds
-    #         self.assertAlmostEqual(
-    #             self.griddisk.V_squared_jacobian(self.nu_0, baseline, {'s': 1.})['s'] / V_squared_jacobian,
-    #             1, delta=0.05)
+            V_squared_jacobian = {}
+            V_squared_jacobian['positions'] = np.array([
+                (np.conjugate(V) * dVdx + V * np.conjugate(dVdx)).real,
+                (np.conjugate(V) * dVdy + V * np.conjugate(dVdy)).real
+            ])  
 
-    #         self.assertAlmostEqual(
-    #             self.disk.V_squared_jacobian(self.nu_0, baseline)['s'],
-    #             V_squared_jacobian, places=6)
-            
+            V_s_j = ChaoticSource.V_squared_jacobian(self.multipoint,self.nu_0, baseline)
+            self.assertAlmostEqual(
+                V_s_j['positions'][0][0], V_squared_jacobian['positions'][0],delta=1e5)
+
+            self.assertAlmostEqual(
+                V_s_j['positions'][0][1], V_squared_jacobian['positions'][1],delta=1e5)
+
+   
+            V_s_j = self.multipoint.V_squared_jacobian(self.nu_0, baseline)
+            self.assertAlmostEqual(
+                V_s_j['positions'][0][0], V_squared_jacobian['positions'][0],delta=1e5)
+
+            self.assertAlmostEqual(
+                V_s_j['positions'][0][1], V_squared_jacobian['positions'][1],delta=1e5)
+
 
     def test_V(self):
         """Test V"""
