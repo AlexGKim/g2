@@ -86,9 +86,6 @@ class GridSource(source.ChaoticSource):
         self.freq_min = np.min(self.frequency_grid)
         self.freq_max = np.max(self.frequency_grid)
 
-        # The sample frequencies of the Fourier transform in physical space
-        self.u_coords = (fftfreq(self.nx, d=self.pixel_scale_m))
-        self.v_coords = (fftfreq(self.ny, d=self.pixel_scale_m))
     
     def pixel_scale(self) -> float:
         """
