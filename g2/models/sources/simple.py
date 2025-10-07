@@ -686,9 +686,11 @@ class MultiPoint(ChaoticSource):
 
     def get_params(self) -> Dict[str, Any]:
         """Extract parameters as a dictionary"""
+        pos = self.positions - self.positions[0]
+        pos = pos[1:]
         return {
             # 'flux_densities': self.flux_densities,
-            'positions': self.positions,
+            'positions': pos,
             # 'spectral_indices': self.spectral_indices,
             # 'reference_frequency': self.reference_frequency
         }
@@ -779,6 +781,9 @@ class MultiPoint(ChaoticSource):
         if params is None:
             params = self.get_params()
         
+        positions = self.positions[0] + params['positions']
+        positions = np.insert(positions, 0, self.positions[0], axis=0)
+
         # Physical constants
         c = 2.99792458e8  # Speed of light in m/s
         wavelength = c / nu_0
@@ -795,9 +800,9 @@ class MultiPoint(ChaoticSource):
         total_flux = jnp.sum(source_fluxes)
         
         # Calculate derivative w.r.t. each position component
-        pos_grad = jnp.zeros_like(params['positions'])
+        pos_grad = jnp.zeros_like(positions)
         
-        for i in range(len(params['positions'])):
+        for i in range(len(positions)):
             # Derivative of phase w.r.t. position: ∂φᵢ/∂nᵢ = 2π B_⊥ / λ
             dphase_dpos = 2 * jnp.pi * baseline_perp / wavelength
             
@@ -805,7 +810,7 @@ class MultiPoint(ChaoticSource):
             weight_i = source_fluxes[i] / total_flux
             
             # Phase of this source
-            phase_i = 2 * jnp.pi * jnp.dot(params['positions'][i], baseline_perp) / wavelength
+            phase_i = 2 * jnp.pi * jnp.dot(positions[i], baseline_perp) / wavelength
             
             # Derivative of V w.r.t. position of source i
             dV_dpos_i = weight_i * 1j * jnp.exp(1j * phase_i) * dphase_dpos
