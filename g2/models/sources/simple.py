@@ -4,6 +4,7 @@ import jax.numpy as jnp # Use JAX for array operations
 from jax import custom_jvp, pure_callback
 import jax
 import jax.lax
+
 from functools import partial
 
 from scipy.special import j1, jv
@@ -691,14 +692,14 @@ class TotallyOccultedDisk(ChaoticSource):
         """
 
         # Divide spectra existance by spherical surface and conversion between surface and solid angle
-        if (n_hat[0]*self.distance - self.dx) ** 2 + (n_hat[1]* self.distance - self.dy)**2 < self.radius_m_1:
+        if (n_hat[0]*self.distance - self.dx) ** 2 + (n_hat[1]* self.distance - self.dy)**2 < self.radius_m_1**2:
             return self.spectral_exitance_1 / (4*np.pi)
-        elif (n_hat[0]*self.distance) ** 2 + (n_hat[1]* self.distance )**2 < self.radius_m_0:
+        elif (n_hat[0]*self.distance) ** 2 + (n_hat[1]* self.distance )**2 < self.radius_m_0**2:
             return self.spectral_exitance_0 / (4*np.pi)
         else:
             return 0.
     
-    def specific_flux(self, nu: float) -> float:
+    def specific_flux(self, nu: float, params=None) -> float:
         """
         Calculate total flux (constant for uniform disk).
         
@@ -713,8 +714,18 @@ class TotallyOccultedDisk(ChaoticSource):
             Total flux density in W m⁻² Hz⁻¹.
         """
 
-        return ( self.spectral_exitance_0 * ((self.radius_m_0 / self.distance)**2 - (self.radius_m_1/self.distance)**2) 
-                + self.spectral_exitance_1 * ((self.radius_m_1 / self.distance)**2)) 
+        if params is None:
+            params = self.get_params()
+
+        d2 = params['dx']**2 + params['dy']**2. # distance between two squared
+        if d2 >= (params['radius_m_0']+params['radius_m_1'])**2:
+            # no overlap
+            return self.spectral_exitance_0  * np.pi * params['radius_m_0']**2 + self.spectral_exitance_1 * np.pi * params['radius_m_1']**2 
+        elif np.sqrt(d2)+params['radius_m_1'] <= params['radius_m_0']:
+           return ( self.spectral_exitance_0 * ((params['radius_m_0'] / self.distance)**2 - (params['radius_m_1']/self.distance)**2) 
+                   + self.spectral_exitance_1 * ((params['radius_m_1'] / self.distance)**2)) 
+        else:
+            raise Exception("Not implmented yet")
 
     def V(self, nu_0: float, baseline: np.ndarray, params = None) -> complex:
         """
@@ -784,13 +795,40 @@ class TotallyOccultedDisk(ChaoticSource):
         # Calculate argument for Bessel function: zeta = 2πuθ
         zeta_1 = jnp.pi * u * (2 * radius_rad_1)
         # Handle special case x=0 (zero baseline or zero radius)
-        V_value_1 = jnp.where(zeta_1 == 0, 1.0, 2 * _j1(zeta_1) / zeta_1) * complex(
-            np.cos(-2*np.pi*u*params['dx']) + np.sin(-2*np.pi*u*params['dy']))
-        V_value_1 = (self.spectral_exitance_1  - self.spectral_exitance_0) * np.pi * radius_rad_1**2 * V_value_1
+        V_value_1 = jnp.where(zeta_1 == 0, 1.0, 2 * _j1(zeta_1) / zeta_1) * (
+            jnp.cos(-2*jnp.pi*u*params['dx']) + 1j*jnp.sin(-2*jnp.pi*u*params['dy']))
 
 
-        return (V_value_0 + V_value_1)/(self.spectral_exitance_0 * np.pi * (radius_rad_0**2-radius_rad_1**2) +
-                                        self.spectral_exitance_1 * np.pi * radius_rad_1**2)
+        d2 = self.dx**2 + self.dy**2  # distance between two squared
+        
+        # Define the conditions
+        no_overlap = d2 >= (self.radius_m_0 + self.radius_m_1)**2
+        complete_overlap = jnp.sqrt(d2) + self.radius_m_1 <= self.radius_m_0
+        
+        # Define the computation functions for each case
+        def no_overlap_case():
+            return self.spectral_exitance_1 * jnp.pi * radius_rad_1**2 * V_value_1
+        
+        def complete_overlap_case():
+            return (self.spectral_exitance_1 - self.spectral_exitance_0) * jnp.pi * radius_rad_1**2 * V_value_1
+        
+        def not_implemented_case():
+            # JAX doesn't support exceptions in compiled code, so we return NaN or a large value
+            return jnp.nan + 0.0j  # Return complex NaN to match other return types
+        
+        # Use JAX's conditional logic
+        V_value_1 = jax.lax.cond(
+            no_overlap,
+            no_overlap_case,
+            lambda: jax.lax.cond(
+                complete_overlap,
+                complete_overlap_case,
+                not_implemented_case
+            )
+        )
+        
+        return (V_value_0 + V_value_1) / self.specific_flux(params)
+ 
 
 
 class MultiPoint(ChaoticSource):

@@ -65,10 +65,14 @@ def calculate_spectral_exitance_from_kepler_magnitude(kp_mag, radius_m, distance
     
     return spectral_exitance
 
+def flux_ratio_KIC8410637(wavelength):
+    return 1/(-4.1523 + 2.1778e-3 * (wavelength*1e10))
 
-def analyze_detached_eclipsing_binary():
+def analyze_detached_eclipsing_binary(nu_0, spectral_exitance_0, radius_m_0, spectral_exitance_1,
+                                    radius_m_1, dx, dy, distance, observations,
+                                    pdf_filename='detached_binary_analysis.pdf'):
     """
-    Comprehensive analysis function for detached eclipsing binary KIC 8410637.
+    Comprehensive analysis function for detached eclipsing binaries.
     
     This function implements all the requested analysis steps:
     1. Plots intensity image over angular extent
@@ -77,59 +81,59 @@ def analyze_detached_eclipsing_binary():
     4. Prints Jacobian
     5. Prints inverse_noise for observations
     6. Prints Fisher Matrix and uncertainties
+    
+    Parameters
+    ----------
+    spectral_exitance_0 : float
+        Spectral exitance of primary star (W m⁻² Hz⁻¹)
+    radius_m_0 : float
+        Radius of primary star in meters
+    spectral_exitance_1 : float
+        Spectral exitance of secondary star (W m⁻² Hz⁻¹)
+    radius_m_1 : float
+        Radius of secondary star in meters
+    dx : float
+        X offset of secondary star in meters
+    dy : float
+        Y offset of secondary star in meters
+    distance : float
+        Distance to the binary system in meters
+    observations : list
+        List of Observation objects for analysis
+    pdf_filename : str, optional
+        Name of the PDF file to save plots to
+        
+    Returns
+    -------
+    tuple
+        (source, uniform_disk, observations) - the created models and observations
     """
     
     # Physical constants
     solar_radius = 6.96e8  # meters
-    parsec = 3.0857e16  # meters
     c = 2.99792458e8  # m/s
     
-    # KIC 8410637 parameters
-    # Star 0 (primary)
-    radius_m_0 = 10.74 * solar_radius  # meters
-    distance = 998 * parsec  # meters
-    kp_magnitude = 10.77
-    
-    # Star 1 (secondary) 
-    radius_m_1 = 1.571 * solar_radius  # meters
-    flux_ratio = 7.86  # star 0 to star 1 flux ratio
-    
-    # Calculate spectral exitances
-    spectral_exitance_0 = calculate_spectral_exitance_from_kepler_magnitude(
-        kp_magnitude, radius_m_0, 998)
-    
-    # Confirm the flux ratio calculation
-    # spectral_exitance_1 should be lower by factor: flux_ratio * (radius_m_1/radius_m_0)**2
-    radius_ratio_squared = (radius_m_1 / radius_m_0)**2
-    expected_factor = flux_ratio * radius_ratio_squared
-    spectral_exitance_1 = spectral_exitance_0 / expected_factor
-    
-    print(f"Flux ratio: {flux_ratio}")
-    print(f"Radius ratio squared: {radius_ratio_squared:.6f}")
-    print(f"Expected spectral exitance factor: {expected_factor:.6f}")
-    print(f"Spectral exitance 0: {spectral_exitance_0:.3e} W m⁻² Hz⁻¹")
-    print(f"Spectral exitance 1: {spectral_exitance_1:.3e} W m⁻² Hz⁻¹")
-    print(f"Confirmed: spectral_exitance_1 is lower by factor {spectral_exitance_0/spectral_exitance_1:.3f}")
-    
-    # Choose dx, dy such that star 1 profile is wholly within star 0
-    # Make sure |dx|, |dy| + radius_1 < radius_0
+    # Calculate angular radii
     angular_radius_0 = radius_m_0 / distance
     angular_radius_1 = radius_m_1 / distance
     
-    # Choose dx, dy to be about 60% of the way from center to edge
-    dx = 0.6 * (angular_radius_0 - angular_radius_1) * distance
-    dy = 0.4 * (angular_radius_0 - angular_radius_1) * distance
-    
-    print(f"\nChosen offsets:")
-    print(f"dx: {dx/solar_radius:.3f} solar radii = {dx/distance*206265:.1f} arcsec")
-    print(f"dy: {dy/solar_radius:.3f} solar radii = {dy/distance*206265:.1f} arcsec")
-    print(f"Check: offset + radius_1 = {(np.sqrt(dx**2 + dy**2) + radius_m_1)/solar_radius:.3f} < radius_0 = {radius_m_0/solar_radius:.1f} solar radii")
+    print(f"System parameters:")
+    print(f"Primary star:")
+    print(f"  Radius: {radius_m_0/solar_radius:.2f} R☉")
+    print(f"  Spectral exitance: {spectral_exitance_0:.3e} W m⁻² Hz⁻¹")
+    print(f"Secondary star:")
+    print(f"  Radius: {radius_m_1/solar_radius:.3f} R☉")
+    print(f"  Spectral exitance: {spectral_exitance_1:.3e} W m⁻² Hz⁻¹")
+    print(f"Offsets:")
+    print(f"  dx: {dx/solar_radius:.3f} solar radii = {dx/distance*206265:.1f} arcsec")
+    print(f"  dy: {dy/solar_radius:.3f} solar radii = {dy/distance*206265:.1f} arcsec")
+    print(f"  Check: offset + radius_1 = {(np.sqrt(dx**2 + dy**2) + radius_m_1)/solar_radius:.3f} < radius_0 = {radius_m_0/solar_radius:.1f} solar radii")
     
     # Create TotallyOccultedDisk source
     source = TotallyOccultedDisk(
         spectral_exitance_0=spectral_exitance_0,
         radius_m_0=radius_m_0,
-        spectral_exitance_1=spectral_exitance_1, 
+        spectral_exitance_1=spectral_exitance_1,
         radius_m_1=radius_m_1,
         dx=dx,
         dy=dy,
@@ -144,18 +148,9 @@ def analyze_detached_eclipsing_binary():
     )
     
     # Observation parameters
-    nu_0 = 5e14  # 600 nm
     wavelength = c / nu_0
     
-    # Create observation configuration
-    observations = [
-        Observation(integration_time=3600, telescope_area=1.0, throughput=1.0, detector_jitter=1e-11),
-        Observation(integration_time=7200, telescope_area=2.0, throughput=0.8, detector_jitter=5e-12),
-        Observation(integration_time=1800, telescope_area=4.0, throughput=0.9, detector_jitter=2e-11)
-    ]
-    
     # Create PDF file for all plots
-    pdf_filename = 'kic8410637_analysis.pdf'
     print(f"\nCreating plots and saving to {pdf_filename}...")
     
     with PdfPages(pdf_filename) as pdf:
@@ -175,12 +170,16 @@ def analyze_detached_eclipsing_binary():
                 n_hat = np.array([angle_x[i, j], angle_y[i, j]])
                 intensity_grid[i, j] = source.intensity(nu_0, n_hat)
         
-        # Plot intensity
+        # Plot intensity with log scale to show both spectral exitances
         fig, ax = plt.subplots(figsize=(10, 8))
         extent = [-angular_extent*206265, angular_extent*206265,
                   -angular_extent*206265, angular_extent*206265]  # Convert to arcsec
-        im = ax.imshow(intensity_grid, extent=extent, origin='lower', cmap='hot')
-        plt.colorbar(im, label='Intensity (W m⁻² Hz⁻¹ sr⁻¹)')
+        
+        # Use log scale to show both spectral exitances
+        # Add small value to avoid log(0)
+        intensity_log = np.log10(intensity_grid + 1e-20)
+        im = ax.imshow(intensity_log, extent=extent, origin='lower', cmap='hot')
+        plt.colorbar(im, label='log₁₀(Intensity) [W m⁻² Hz⁻¹ sr⁻¹]')
         ax.set_xlabel('Angular offset (arcsec)')
         ax.set_ylabel('Angular offset (arcsec)')
         ax.set_title('TotallyOccultedDisk Intensity Distribution\nKIC 8410637')
@@ -311,16 +310,17 @@ def analyze_detached_eclipsing_binary():
     
     # Summary
     print(f"\n" + "="*60)
-    print("SUMMARY FOR KIC 8410637")
+    print("DETACHED ECLIPSING BINARY ANALYSIS SUMMARY")
     print("="*60)
     print(f"Primary star (star 0):")
     print(f"  Radius: {radius_m_0/solar_radius:.2f} R☉")
     print(f"  Spectral exitance: {spectral_exitance_0:.3e} W m⁻² Hz⁻¹")
     print(f"Secondary star (star 1):")
-    print(f"  Radius: {radius_m_1/solar_radius:.3f} R☉") 
+    print(f"  Radius: {radius_m_1/solar_radius:.3f} R☉")
     print(f"  Spectral exitance: {spectral_exitance_1:.3e} W m⁻² Hz⁻¹")
-    print(f"  Flux ratio (0/1): {flux_ratio:.2f}")
+    print(f"  Flux ratio (0/1): {spectral_exitance_0/spectral_exitance_1:.2f}")
     print(f"System:")
+    parsec = 3.0857e16  # meters
     print(f"  Distance: {distance/parsec:.0f} pc")
     print(f"  Angular separation: {np.sqrt(dx**2 + dy**2)/distance*206265:.1f} arcsec")
     print(f"  Primary angular radius: {angular_radius_0*206265:.3f} arcsec")
@@ -329,6 +329,90 @@ def analyze_detached_eclipsing_binary():
     return source, uniform_disk, observations
 
 
+def kic8410637_analysis():
+    """
+    Analysis function specifically for the detached eclipsing binary KIC 8410637.
+    
+    This function sets up the specific parameters for KIC 8410637 and calls
+    the general analyze_detached_eclipsing_binary function.
+    
+    Returns
+    -------
+    tuple
+        (source, uniform_disk, observations) - the created models and observations
+    """
+
+    c = 2.99792458e8  # m/s
+    nu_0 = 5e14  # 600 nm
+    wavelength = c / nu_0
+
+
+    # Physical constants
+    solar_radius = 6.96e8  # meters
+    parsec = 3.0857e16  # meters
+    
+    # KIC 8410637 parameters
+    # Star 0 (primary)
+    radius_m_0 = 10.74 * solar_radius  # meters
+    distance = 998 * parsec  # meters
+    kp_magnitude = 10.77
+    
+    # Star 1 (secondary)
+    radius_m_1 = 1.571 * solar_radius  # meters
+    # flux_ratio = 7.86  # star 0 to star 1 flux ratio
+    flux_ratio = flux_ratio_KIC8410637(wavelength)
+
+    # spectral_exitance_1 = 5.9e-8 # W/m^2/Hz
+
+    # Calculate spectral exitances
+    spectral_exitance_0 = calculate_spectral_exitance_from_kepler_magnitude(
+        kp_magnitude, radius_m_0, 998)
+    
+    # Confirm the flux ratio calculation
+    # spectral_exitance_1 should be lower by factor: flux_ratio * (radius_m_1/radius_m_0)**2
+
+    radius_ratio_squared = (radius_m_0 / radius_m_1)**2
+    spectral_exitance_1 = flux_ratio *(radius_ratio_squared) **2 * spectral_exitance_0 
+
+    print(f"KIC 8410637 SPECIFIC PARAMETERS:")
+    print(f"Flux ratio: {flux_ratio}")
+    print(f"Radius ratio squared: {radius_ratio_squared:.6f}")
+    # print(f"Expected spectral exitance factor: {expected_factor:.6f}")
+    print(f"Spectral exitance 0: {spectral_exitance_0:.3e} W m⁻² Hz⁻¹")
+    print(f"Spectral exitance 1: {spectral_exitance_1:.3e} W m⁻² Hz⁻¹")
+    print(f"Confirmed: spectral_exitance_1 is lower by factor {spectral_exitance_0/spectral_exitance_1:.3f}")
+    
+    # Choose dx, dy such that star 1 profile is wholly within star 0
+    # Make sure |dx|, |dy| + radius_1 < radius_0
+    angular_radius_0 = radius_m_0 / distance
+    angular_radius_1 = radius_m_1 / distance
+    
+    # Choose dx, dy to be about 60% of the way from center to edge
+    dx = 0.6 * (angular_radius_0 - angular_radius_1) * distance
+    dy = 0.4 * (angular_radius_0 - angular_radius_1) * distance
+    
+    # Create observation configuration for KIC 8410637
+    observations = [
+        Observation(integration_time=3600, telescope_area=1.0, throughput=1.0, detector_jitter=1e-11),
+        Observation(integration_time=7200, telescope_area=2.0, throughput=0.8, detector_jitter=5e-12),
+        Observation(integration_time=1800, telescope_area=4.0, throughput=0.9, detector_jitter=2e-11)
+    ]
+    
+    # Call the general analysis function with KIC 8410637 parameters
+    return analyze_detached_eclipsing_binary(
+        nu_0,
+        spectral_exitance_0=spectral_exitance_0,
+        radius_m_0=radius_m_0,
+        spectral_exitance_1=spectral_exitance_1,
+        radius_m_1=radius_m_1,
+        dx=dx,
+        dy=dy,
+        distance=distance,
+        observations=observations,
+        pdf_filename='kic8410637_analysis.pdf'
+    )
+
+
 if __name__ == "__main__":
-    # Run the analysis
-    source, uniform_disk, observations = analyze_detached_eclipsing_binary()
+    # Run the KIC 8410637 specific analysis
+    source, uniform_disk, observations = kic8410637_analysis()
