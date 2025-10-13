@@ -141,9 +141,19 @@ def analyze_detached_eclipsing_binary(nu_0, spectral_exitance_0, radius_m_0, spe
     )
     
     # Create comparison UniformDisk for star 0
-    uniform_disk = UniformDiskFixR(
-        spectral_exitance=spectral_exitance_0,
-        radius_m=radius_m_0,
+    # uniform_disk = UniformDiskFixR(
+    #     spectral_exitance=spectral_exitance_0,
+    #     radius_m=radius_m_0,
+    #     distance=distance
+    # )
+
+    source2 = TotallyOccultedDisk(
+        spectral_exitance_0=spectral_exitance_0,
+        radius_m_0=radius_m_0,
+        spectral_exitance_1=spectral_exitance_1,
+        radius_m_1=radius_m_1,
+        dx=1.05 * (radius_m_0 + radius_m_1),
+        dy=0,
         distance=distance
     )
     
@@ -226,14 +236,14 @@ def analyze_detached_eclipsing_binary(nu_0, spectral_exitance_0, radius_m_0, spe
         plt.close(fig)
         
         # 3. Plot difference with UniformDisk
-        print(f"3. Plotting difference with UniformDisk...")
+        print(f"3. Plotting difference with Other thing...")
         
         # Calculate V_squared for uniform disk on same grid
         v_squared_uniform = np.zeros((n_baseline, n_baseline))
         for i in range(n_baseline):
             for j in range(n_baseline):
                 baseline = np.array([u_grid[i, j] * wavelength, v_grid[i, j] * wavelength, 0.0])
-                v_squared_uniform[i, j] = uniform_disk.V_squared(nu_0, baseline)
+                v_squared_uniform[i, j] = source2.V_squared(nu_0, baseline)
         
         # Calculate difference
         v_squared_diff = v_squared_grid - v_squared_uniform
@@ -326,7 +336,7 @@ def analyze_detached_eclipsing_binary(nu_0, spectral_exitance_0, radius_m_0, spe
     print(f"  Primary angular radius: {angular_radius_0*206265:.3f} arcsec")
     print(f"  Secondary angular radius: {angular_radius_1*206265:.3f} arcsec")
     
-    return source, uniform_disk, observations
+    return source, source2, observations
 
 
 def kic8410637_analysis():
@@ -415,4 +425,4 @@ def kic8410637_analysis():
 
 if __name__ == "__main__":
     # Run the KIC 8410637 specific analysis
-    source, uniform_disk, observations = kic8410637_analysis()
+    source, source2, observations = kic8410637_analysis()
