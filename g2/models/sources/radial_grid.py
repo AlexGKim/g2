@@ -22,6 +22,7 @@ import pandas as pd
 from ..base import source
 import jax.numpy as jnp
 import jax
+from jax.numpy.fft import fftshift, fftfreq
 from scipy.special import jv
 
 
@@ -61,7 +62,7 @@ class RadialGrid(source.ChaoticSource):
         # Store input data
         self.lambdas = np.array(lambdas)  # [Angstrom]
         self.I_nu_p = np.array(I_nu_p)    # [intensity units from data]
-        self.p_rays = np.array(p_rays)    # [meters]
+        self.p_rays = np.array(p_rays) * 1e-2  # Convert from cm to meters
         
         # Calculate frequency grid
         self.frequency_grid = c / (self.lambdas * 1e-10)  # [Hz]
@@ -286,6 +287,7 @@ class RadialGrid(source.ChaoticSource):
         
         # Apply polar DFT to get gamma (which equals V)
         gamma = self.dft_polar(intensity_norm)
+        gamma = fftshift(gamma)  # Shift to center zero frequency
         
         # Convert baseline to spatial frequency
         c = 2.99792458e8
@@ -293,21 +295,18 @@ class RadialGrid(source.ChaoticSource):
         baseline_perp = baseline[:2]
         baseline_length = np.linalg.norm(baseline_perp)
         
-        # Calculate spatial frequency parameter
-        # This needs to be mapped to the gamma array indices
-        # The mapping depends on the relationship between baseline and rho
-        
-        # For now, use a simple mapping - this may need refinement
-        # based on the exact coordinate system used in II.ipynb
-        max_impact = np.max(self.p_rays)
-        angular_scale = max_impact / self.distance
-        
-        # Calculate dimensionless parameter
+        # Calculate spatial frequency u = |B|/λ
         u = baseline_length / wavelength
-        rho_index = int(u * angular_scale * len(gamma) / (2 * np.pi))
-        rho_index = min(rho_index, len(gamma) - 1)
         
-        return gamma[rho_index] + 0.0j
+        # Create frequency coordinates using fftfreq and fftshift (like GridSource)
+        # The spacing in the polar DFT corresponds to the angular sampling
+        angular_spacing = np.max(self.p_rays) / self.distance / len(intensity_norm)
+        u_coords = fftshift(fftfreq(len(gamma), d=angular_spacing))
+        
+        # Find the closest frequency coordinate
+        u_idx = np.argmin(np.abs(u_coords - u))
+        
+        return gamma[u_idx] + 0.0j
 
     def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> Dict[str, float]:
         """
@@ -343,6 +342,7 @@ class RadialGrid(source.ChaoticSource):
         
         # Calculate dgamma2ds
         dgamma2ds_result = self.dgamma2ds(intensity_norm)
+        dgamma2ds_result = fftshift(dgamma2ds_result)  # Shift to center zero frequency
         
         # Convert baseline to appropriate index (same logic as V method)
         c = 2.99792458e8
@@ -350,18 +350,21 @@ class RadialGrid(source.ChaoticSource):
         baseline_perp = baseline[:2]
         baseline_length = np.linalg.norm(baseline_perp)
         
-        max_impact = np.max(self.p_rays)
-        angular_scale = max_impact / self.distance
-        
+        # Calculate spatial frequency u = |B|/λ
         u = baseline_length / wavelength
-        rho_index = int(u * angular_scale * len(dgamma2ds_result) / (2 * np.pi))
-        rho_index = min(rho_index, len(dgamma2ds_result) - 1)
+        
+        # Create frequency coordinates using fftfreq and fftshift (like GridSource)
+        angular_spacing = np.max(self.p_rays) / self.distance / len(intensity_norm)
+        u_coords = fftshift(fftfreq(len(dgamma2ds_result), d=angular_spacing))
+        
+        # Find the closest frequency coordinate
+        u_idx = np.argmin(np.abs(u_coords - u))
         
         jacobian = {}
         
         # Derivative with respect to size parameter 's'
         if 's' in params:
-            jacobian['s'] = dgamma2ds_result[rho_index]
+            jacobian['s'] = dgamma2ds_result[u_idx]
         
         # Derivative with respect to phi_B (rotation parameter)
         # This would require additional implementation similar to dgamma2ds

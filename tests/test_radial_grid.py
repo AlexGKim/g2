@@ -79,11 +79,11 @@ def plot_intensity_profiles():
             intensity_profile = source.I_nu_p[wave_idx, :]
             intensity_norm = intensity_profile / np.sum(intensity_profile)
             
-            # Plot vs impact parameter in units of 10^15 m
-            ax.plot(source.p_rays / 1e15, intensity_norm, 
+            # Plot vs impact parameter in units of 10^10 km (which is 10^13 m)
+            ax.plot(source.p_rays / 1e13, intensity_norm,
                    color=color, linewidth=2, label=f'λ = {actual_wave:.0f}Å')
         
-        ax.set_xlabel('Impact Parameter [10¹⁵ m]')
+        ax.set_xlabel('Impact Parameter [10¹⁰ km]')
         ax.set_ylabel('Normalized Emission')
         ax.set_title('Intensity Profiles vs Impact Parameter')
         ax.legend()
@@ -106,45 +106,53 @@ def plot_gamma2_vs_zeta():
         if source is None:
             raise Exception("Could not create source")
         
+        # Parameters matching II.ipynb gamma2snr function
+        nd = source.p_rays.shape[0]
+        delta = source.p_rays[1] - source.p_rays[0]
+        # drad in II.ipynb is 0.875e15 in original units (cm), convert to meters like p_rays
+        drad = 0.875e15 * 1e-2  # Convert from cm to meters to match p_rays units
+        ndisk = int(2 * drad / delta)
+        factor = 25  # from II.ipynb
+        norder = factor * 5
+        
+        # Create padded flux array (matching II.ipynb)
+        flux = np.zeros(nd * factor)
+        
         # Select wavelengths
         target_wavelengths = [3700, 4700, 6055, 6355, 8750]  # Angstrom
         colors = ['blue', 'green', 'red', 'orange', 'purple']
-        
-        # Set up zeta range
-        zeta_max = 10
-        zeta_coords = np.linspace(0.1, zeta_max, 50)
         
         for target_wave, color in zip(target_wavelengths, colors):
             # Find closest wavelength
             wave_idx = np.argmin(np.abs(source.lambdas - target_wave))
             actual_wave = source.lambdas[wave_idx]
-            nu_0 = source.frequency_grid[wave_idx]
             
-            # Get intensity profile and normalize
-            intensity_profile = source.I_nu_p[wave_idx, :]
-            intensity_norm = intensity_profile / np.sum(intensity_profile)
+            # Reset flux array and fill with intensity data
+            flux[:] = 0
+            # Convert I_nu_p to I_lam_p as in II.ipynb
+            I_lam_p = source.I_nu_p / source.lambdas[:, None] / source.lambdas[:, None]
+            flux[:nd] = I_lam_p[wave_idx, :]
             
-            # Calculate gamma using polar DFT
-            gamma = source.dft_polar(intensity_norm)
-            gamma = gamma / gamma[0]  # Normalize
-            gamma2 = np.abs(gamma)**2
+            # Calculate gamma using polar DFT (matching II.ipynb)
+            gamma = source.dft_polar(flux, norder=norder)
+            gamma0 = gamma[0]
+            gamma = gamma / gamma0  # Normalize
+            gamma2 = gamma * gamma  # Real gamma squared (not abs squared)
             
-            # Create zeta array based on the gamma array length
-            zeta_array = np.arange(len(gamma2)) * 2 * np.pi / len(gamma2) * 10  # Scale to match zeta range
+            # Create zeta array matching II.ipynb scaling
+            zeta_array = np.arange(gamma2.shape[0]) * 2 * np.pi / (nd * factor / ndisk)
             
             # Plot gamma2 vs zeta
-            ax.plot(zeta_array, gamma2, color=color, linewidth=2, 
+            ax.plot(zeta_array, gamma2, color=color, linewidth=2,
                    label=f'λ = {actual_wave:.0f}Å')
         
         # Add theoretical Airy profile for comparison
-        zeta_theory = np.linspace(0.1, 10, 100)
-        airy_theory = []
-        for z in zeta_theory:
-            if z == 0:
-                airy_theory.append(1.0)
-            else:
-                airy_val = (2 * jv(1, z) / z)**2
-                airy_theory.append(airy_val)
+        zeta_theory = np.arange(0, nd * 10, 0.01)
+        # Handle division by zero at zeta=0
+        airy_theory = np.zeros_like(zeta_theory)
+        airy_theory[0] = 1.0  # Limit as zeta->0
+        mask = zeta_theory > 0
+        airy_theory[mask] = (2 * jv(1, zeta_theory[mask]) / zeta_theory[mask])**2
         
         ax.plot(zeta_theory, airy_theory, 'k--', alpha=0.7, linewidth=2, label='Airy')
         
@@ -173,6 +181,18 @@ def plot_dgamma2ds():
         if source is None:
             raise Exception("Could not create source")
         
+        # Parameters matching II.ipynb gamma2snr function
+        nd = source.p_rays.shape[0]
+        delta = source.p_rays[1] - source.p_rays[0]
+        # drad in II.ipynb is 0.875e15 in original units (cm), convert to meters like p_rays
+        drad = 0.875e15 * 1e-2  # Convert from cm to meters to match p_rays units
+        ndisk = int(2 * drad / delta)
+        factor = 25  # from II.ipynb
+        norder = factor * 5
+        
+        # Create padded flux array (matching II.ipynb)
+        flux = np.zeros(nd * factor)
+        
         # Select wavelengths
         target_wavelengths = [3700, 4700, 6055, 6355, 8750]  # Angstrom
         colors = ['blue', 'green', 'red', 'orange', 'purple']
@@ -182,23 +202,25 @@ def plot_dgamma2ds():
             wave_idx = np.argmin(np.abs(source.lambdas - target_wave))
             actual_wave = source.lambdas[wave_idx]
             
-            # Get intensity profile and normalize
-            intensity_profile = source.I_nu_p[wave_idx, :]
-            intensity_norm = intensity_profile / np.sum(intensity_profile)
+            # Reset flux array and fill with intensity data
+            flux[:] = 0
+            # Convert I_nu_p to I_lam_p as in II.ipynb
+            I_lam_p = source.I_nu_p / source.lambdas[:, None] / source.lambdas[:, None]
+            flux[:nd] = I_lam_p[wave_idx, :]
             
-            # Calculate dgamma2ds
-            dgamma2ds_result = source.dgamma2ds(intensity_norm)
+            # Calculate gamma and dgamma2ds (matching II.ipynb)
+            gamma = source.dft_polar(flux, norder=norder)
+            gamma0 = gamma[0]
+            dgamma2ds_result = source.dgamma2ds(flux, norder=norder)
             
             # Normalize by gamma0^2 for comparison with II.ipynb
-            gamma = source.dft_polar(intensity_norm)
-            gamma0 = gamma[0]
             dgamma2ds_norm = dgamma2ds_result / gamma0**2
             
-            # Create zeta array
-            zeta_array = np.arange(len(dgamma2ds_norm)) * 2 * np.pi / len(dgamma2ds_norm) * 10
+            # Create zeta array matching II.ipynb scaling
+            zeta_array = np.arange(dgamma2ds_norm.shape[0]) * 2 * np.pi / (nd * factor / ndisk)
             
             # Plot absolute value
-            ax.plot(zeta_array, np.abs(dgamma2ds_norm), color=color, linewidth=2, 
+            ax.plot(zeta_array, np.abs(dgamma2ds_norm), color=color, linewidth=2,
                    label=f'λ = {actual_wave:.0f}Å')
         
         ax.set_xlabel('ζ')
