@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Callable, Union, Any, Dict
+from typing import Callable, Union, Any, Dict, Optional
 import jax.numpy as jnp # Use JAX for array operations
 from jax import custom_jvp, pure_callback
 import jax
@@ -226,54 +226,156 @@ class UniformDisk(ChaoticSource):
     astronomical objects.
     
     The intensity distribution is:
-        I(ν, n̂) = I₀
+        I(ν, n̂) = I₀(ν)
     
-    where I₀ is the surface brightness and θ is the angular radius.
+    where I₀(ν) is the frequency-dependent surface brightness and θ is the angular radius.
     
     Parameters
     ----------
-    flux_density : float
-        Total flux density in W m⁻² Hz⁻¹.
+    flux_density : float or array_like
+        Total flux density in W m⁻² Hz⁻¹. Can be:
+        - float: Constant flux density (backward compatible)
+        - array_like: Frequency-dependent flux density values
+    frequencies : array_like, optional
+        Frequency grid in Hz. Required when flux_density is an array.
+        Must have the same length as flux_density array.
     radius : float
         Angular radius in radians.
         
     Attributes
     ----------
-    flux_density : float
-        Total flux density of the disk.
+    flux_density : float or None
+        Total flux density (for backward compatibility with scalar input).
+    flux_density_array : jnp.ndarray or None
+        Array of flux density values for frequency interpolation.
+    frequencies : jnp.ndarray or None
+        Frequency grid for interpolation.
     radius : float
         Angular radius of the disk.
-    surface_brightness : float
-        Uniform surface brightness I₀ = F_ν/(πθ²).
         
     Examples
     --------
-    >>> # Create a disk with 2 milliarcsecond radius
+    >>> # Backward compatible: Create a disk with constant flux
     >>> disk = UniformDisk(flux_density=1e-26, radius=1e-8)  # ~2 mas
-    >>> print(f"Surface brightness: {disk.surface_brightness:.2e} W/m²/Hz/sr")
-    >>> 
+    >>> print(f"Surface brightness at 5e14 Hz: {disk._get_surface_brightness(5e14):.2e} W/m²/Hz/sr")
+    >>>
+    >>> # New: Create a disk with frequency-dependent flux
+    >>> flux_densities = np.array([0.8e-26, 1e-26, 1.2e-26])  # W/m²/Hz
+    >>> frequencies = np.array([4e14, 5e14, 6e14])  # Hz
+    >>> disk = UniformDisk(flux_density=flux_densities, frequencies=frequencies, radius=1e-8)
+    >>> print(f"Interpolated flux at 5.5e14 Hz: {disk._interpolate_flux_density(5.5e14):.2e} W/m²/Hz")
+    >>>
     >>> # Calculate visibility for different baselines
     >>> for B in [10, 100, 1000]:  # meters
     >>>     baseline = np.array([B, 0.0, 0.0])
-    >>>     vis = disk.visibility(5e14, baseline)
-    >>>     print(f"B={B}m: \\V\\|={abs(vis):.3f}")
+    >>>     vis = disk.V(5e14, baseline)
+    >>>     print(f"B={B}m: |V|={abs(vis):.3f}")
     """
     
-    def __init__(self, flux_density: float, radius: float):
+    def __init__(self, flux_density: Union[float, np.ndarray], frequencies: Optional[np.ndarray] = None,
+                 radius: float = None):
         """
         Initialize uniform disk source.
         
         Parameters
         ----------
-        flux_density : float
-            Total flux density in W m⁻² Hz⁻¹.
+        flux_density : float or array_like
+            Total flux density in W m⁻² Hz⁻¹. Can be:
+            - float: Constant flux density (backward compatible)
+            - array_like: Frequency-dependent flux density values
+        frequencies : array_like, optional
+            Frequency grid in Hz. Required when flux_density is an array.
+            Must have the same length as flux_density array.
         radius : float
             Angular radius in radians.
+            
+        Raises
+        ------
+        ValueError
+            If flux_density is an array but frequencies is not provided,
+            or if flux_density and frequencies have different lengths.
         """
-        self.flux_density = flux_density
+        if radius is None:
+            raise ValueError("radius parameter is required")
+        
         self.radius = radius
-        # Calculate uniform surface brightness
-        self.surface_brightness = flux_density / (np.pi * radius**2)
+        
+        # Handle both scalar and array flux_density inputs
+        if jnp.isscalar(flux_density):
+            # Backward compatibility mode: single flux density value
+            self.flux_density = float(flux_density)
+            self.flux_density_array = None
+            self.frequencies = None
+            # Pre-calculate surface brightness for backward compatibility
+            self.surface_brightness = self.flux_density / (np.pi * radius**2)
+        else:
+            # New frequency-dependent mode: array of flux densities
+            if frequencies is None:
+                raise ValueError("frequencies parameter is required when flux_density is an array")
+            
+            flux_density_array = jnp.array(flux_density)
+            frequencies_array = jnp.array(frequencies)
+            
+            if len(flux_density_array) != len(frequencies_array):
+                raise ValueError(f"flux_density and frequencies must have the same length. "
+                               f"Got {len(flux_density_array)} and {len(frequencies_array)}")
+            
+            # Sort by frequency for proper interpolation
+            sort_indices = jnp.argsort(frequencies_array)
+            self.frequencies = frequencies_array[sort_indices]
+            self.flux_density_array = flux_density_array[sort_indices]
+            
+            # Set scalar attributes to None for frequency-dependent mode
+            self.flux_density = None
+            self.surface_brightness = None
+    
+    def _interpolate_flux_density(self, nu: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Interpolate flux density at given frequency using JAX-compatible interpolation.
+        
+        Parameters
+        ----------
+        nu : float or array_like
+            Frequency in Hz.
+            
+        Returns
+        -------
+        flux : float or array_like
+            Interpolated flux density in W m⁻² Hz⁻¹.
+            
+        Notes
+        -----
+        For backward compatibility, returns the constant flux_density if the source
+        was initialized with a scalar value.
+        """
+        if self.flux_density_array is None:
+            # Backward compatibility: return constant flux density
+            return self.flux_density
+        else:
+            # Frequency-dependent mode: interpolate using JAX
+            return jnp.interp(nu, self.frequencies, self.flux_density_array)
+    
+    def _get_surface_brightness(self, nu: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Calculate surface brightness for given frequency.
+        
+        Parameters
+        ----------
+        nu : float or array_like
+            Frequency in Hz.
+            
+        Returns
+        -------
+        surface_brightness : float or array_like
+            Surface brightness I₀ = F_ν/(πθ²) in W m⁻² Hz⁻¹ sr⁻¹.
+        """
+        if self.surface_brightness is not None:
+            # Backward compatibility: return pre-calculated constant surface brightness
+            return self.surface_brightness
+        else:
+            # Frequency-dependent mode: calculate from interpolated flux
+            flux = self._interpolate_flux_density(nu)
+            return flux / (np.pi * self.radius**2)
 
     def get_params(self) -> Dict[str, Any]:
         """Extract parameters as a dictionary"""
@@ -284,41 +386,42 @@ class UniformDisk(ChaoticSource):
 
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
         """
-        Calculate uniform disk intensity.
+        Calculate uniform disk intensity with frequency-dependent surface brightness.
         
-        Returns constant surface brightness inside the disk radius,
+        Returns frequency-dependent surface brightness inside the disk radius,
         zero outside.
         
         Parameters
         ----------
         nu : float or array_like
-            Frequency in Hz (not used for uniform disk).
+            Frequency in Hz. Used for interpolating flux density.
         n_hat : array_like, shape (2,)
             Sky direction in radians.
             
         Returns
         -------
-        intensity : float
+        intensity : float or array_like
             Specific intensity in W m⁻² Hz⁻¹ sr⁻¹.
         """
         r = jnp.sqrt(n_hat[0]**2 + n_hat[1]**2)
-        return self.surface_brightness if r <= self.radius else 0.0
+        surface_brightness = self._get_surface_brightness(nu)
+        return jnp.where(r <= self.radius, surface_brightness, 0.0)
     
     def specific_flux(self, nu: float) -> float:
         """
-        Calculate total flux (constant for uniform disk).
+        Calculate total flux with frequency interpolation.
         
         Parameters
         ----------
         nu : float
-            Frequency in Hz (not used).
+            Frequency in Hz. Used for interpolating flux density.
             
         Returns
         -------
         flux : float
             Total flux density in W m⁻² Hz⁻¹.
         """
-        return self.flux_density
+        return self._interpolate_flux_density(nu)
     
     def V(self, nu_0: float, baseline: np.ndarray, params = None) -> complex:
         """

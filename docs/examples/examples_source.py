@@ -85,9 +85,16 @@ summary(source)
 
 # uniform_disk-begin
 from g2.models.sources.simple import  UniformDisk
+import numpy as np
 
-# instance of a UniformDisk
+# Backward compatible: instance of a UniformDisk with constant flux
 source = UniformDisk(flux_density=1e-26, radius=0.5e-3)  # 0.5 milliarcseconds
+
+# New: frequency-dependent UniformDisk
+frequencies = np.array([4e14, 5e14, 6e14])  # Hz (750nm, 600nm, 500nm)
+flux_densities = np.array([0.8e-26, 1e-26, 1.2e-26])  # W/m²/Hz
+source_freq_dep = UniformDisk(flux_density=flux_densities, frequencies=frequencies, radius=0.5e-3)
+print(f"Interpolated flux at 5.5e14 Hz: {source_freq_dep.specific_flux(5.5e14):.2e} W/m²/Hz")
 # uniform_disk-end
 
 # summary-call-begin
