@@ -62,7 +62,7 @@ class RadialGrid(source.ChaoticSource):
         # Store input data
         self.lambdas = np.array(lambdas)  # [Angstrom]
         self.I_nu_p = np.array(I_nu_p)    # [intensity units from data]
-        self.p_rays = np.array(p_rays) * 1e-2  # Convert from cm to meters
+        self.p_rays = np.array(p_rays)    # In meters
         
         # Calculate frequency grid
         self.frequency_grid = c / (self.lambdas * 1e-10)  # [Hz]
@@ -283,7 +283,7 @@ class RadialGrid(source.ChaoticSource):
         intensity_profile = self.I_nu_p[freq_idx, :]
         
         # Normalize intensity profile
-        intensity_norm = intensity_profile / np.sum(intensity_profile)
+        intensity_norm = intensity_profile / np.sum(intensity_profile*self.p_rays)
         
         # Apply polar DFT to get gamma (which equals V)
         gamma = self.dft_polar(intensity_norm)
@@ -338,7 +338,7 @@ class RadialGrid(source.ChaoticSource):
         intensity_profile = self.I_nu_p[freq_idx, :]
         
         # Normalize intensity profile
-        intensity_norm = intensity_profile / np.sum(intensity_profile)
+        intensity_norm = intensity_profile / np.sum(intensity_profile * self.p_rays)
         
         # Calculate dgamma2ds
         dgamma2ds_result = self.dgamma2ds(intensity_norm)
