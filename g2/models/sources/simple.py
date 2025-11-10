@@ -381,7 +381,8 @@ class UniformDisk(ChaoticSource):
         """Extract parameters as a dictionary"""
         return {
             # 'flux_density': self.flux_density,
-            'radius': self.radius
+            'lnr': jnp.log(self.radius)
+            # 'radius': self.radius
         }
 
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray) -> Union[float, np.ndarray]:
@@ -479,7 +480,7 @@ class UniformDisk(ChaoticSource):
         u = baseline_length / wavelength
         
         # Calculate argument for Bessel function: zeta = 2πuθ
-        zeta = np.pi * u * (2 * params['radius'])
+        zeta = np.pi * u * (2 * jnp.exp(params['lnr']))
         # Handle special case x=0 (zero baseline or zero radius)
         V_value = jnp.where(zeta == 0, 1.0, 2 * _j1(zeta) / zeta)
         # if zeta == 0:
