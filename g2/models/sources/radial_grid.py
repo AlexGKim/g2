@@ -114,7 +114,7 @@ class RadialGrid(source.ChaoticSource):
         
         for i, rho in enumerate(rhos):
             integrand = y * jv(0, 2 * np.pi * rho * theta) * theta
-            ans[i] = np.trapz(integrand)
+            ans[i] = np.trapezoid(integrand)
             
         return 2 * np.pi * ans
 
@@ -147,7 +147,7 @@ class RadialGrid(source.ChaoticSource):
         
         for i, rho in enumerate(rhos):
             integrand = y * jv(1, 2 * np.pi * rho * theta) * theta**2
-            ans[i] = np.trapz(integrand)
+            ans[i] = np.trapezoid(integrand)
             
         return -(2 * np.pi)**2 * ans
 
@@ -250,7 +250,7 @@ class RadialGrid(source.ChaoticSource):
         angular_radii = self.p_rays / self.distance
         integrand = intensity_profile * angular_radii * 2 * np.pi
         
-        return np.trapz(integrand, angular_radii)
+        return np.trapezoid(integrand, angular_radii)
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
@@ -524,7 +524,7 @@ class RadialGrid2(source.ChaoticSource):
         
         for i, rho in enumerate(rhos):
             integrand = y * jv(0, 2 * np.pi * rho * theta) * theta
-            ans[i] = np.trapz(integrand)
+            ans[i] = np.trapezoid(integrand)
             
         return 2 * np.pi * ans
 
@@ -557,7 +557,7 @@ class RadialGrid2(source.ChaoticSource):
         
         for i, rho in enumerate(rhos):
             integrand = y * jv(1, 2 * np.pi * rho * theta) * theta**2
-            ans[i] = np.trapz(integrand)
+            ans[i] = np.trapezoid(integrand)
             
         return -(2 * np.pi)**2 * ans
 
@@ -655,11 +655,12 @@ class RadialGrid2(source.ChaoticSource):
         intensity_profile = self.I_nu_p[freq_idx, :]
         
         # Integrate over radial coordinates
+        # For polar DFT consistency, use indices like in the dft_polar algorithm
         # Convert to solid angle integration: d²n̂ = 2π r dr for radial symmetry
-        # where r is angular radius (p_rays is already in radians)
-        integrand = intensity_profile * self.p_rays * 2 * np.pi
+        theta = np.arange(len(intensity_profile))  # indices, like in dft_polar
+        integrand = intensity_profile * theta * 2 * np.pi
         
-        return np.trapz(integrand, self.p_rays)
+        return np.trapezoid(integrand)
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
@@ -691,8 +692,9 @@ class RadialGrid2(source.ChaoticSource):
         # Get intensity profile for this frequency
         intensity_profile = self.I_nu_p[freq_idx, :]
         
-        # Normalize intensity profile
-        intensity_norm = intensity_profile / np.sum(intensity_profile)
+        # Normalize intensity profile by specific flux
+        flux = self.specific_flux(nu_0)
+        intensity_norm = intensity_profile / flux
         
         # Apply polar DFT to get gamma (which equals V)
         gamma = self.dft_polar(intensity_norm)
@@ -709,8 +711,8 @@ class RadialGrid2(source.ChaoticSource):
         
         # Create frequency coordinates using fftfreq and fftshift (like GridSource)
         # The spacing in the polar DFT corresponds to the angular sampling
-        # p_rays is already in radians, scale by 's' parameter
-        angular_spacing = np.max(self.p_rays) / params.get('s', 1.0) / len(intensity_norm)
+        # Use the actual spacing between p_rays points, scaled by 's' parameter
+        angular_spacing = (self.p_rays[1] - self.p_rays[0]) / params.get('s', 1.0)
         u_coords = fftshift(fftfreq(len(gamma), d=angular_spacing))
         
         # Find the closest frequency coordinate
@@ -747,8 +749,9 @@ class RadialGrid2(source.ChaoticSource):
         # Get intensity profile for this frequency
         intensity_profile = self.I_nu_p[freq_idx, :]
         
-        # Normalize intensity profile
-        intensity_norm = intensity_profile / np.sum(intensity_profile)
+        # Normalize intensity profile by specific flux
+        flux = self.specific_flux(nu_0)
+        intensity_norm = intensity_profile / flux
         
         # Calculate dgamma2ds
         dgamma2ds_result = self.dgamma2ds(intensity_norm)
@@ -764,8 +767,8 @@ class RadialGrid2(source.ChaoticSource):
         u = baseline_length / wavelength
         
         # Create frequency coordinates using fftfreq and fftshift (like GridSource)
-        # p_rays is already in radians, scale by 's' parameter
-        angular_spacing = np.max(self.p_rays) / params.get('s', 1.0) / len(intensity_norm)
+        # Use the actual spacing between p_rays points, scaled by 's' parameter
+        angular_spacing = (self.p_rays[1] - self.p_rays[0]) / params.get('s', 1.0)
         u_coords = fftshift(fftfreq(len(dgamma2ds_result), d=angular_spacing))
         
         # Find the closest frequency coordinate
