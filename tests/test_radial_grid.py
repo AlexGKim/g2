@@ -51,7 +51,7 @@ def get_radial_source():
             # Try II directory
             hdf_file = 'II/SN2011fe_MLE_intensity_maxlight.hdf'
         
-        source = RadialGrid.from_hdf5(hdf_file)
+        source = RadialGrid.from_hdf5(hdf_file, p_rays_units='cm')
         return source, "RadialGrid from HDF5"
     except Exception as e:
         print(f"Error creating RadialGrid source: {e}")

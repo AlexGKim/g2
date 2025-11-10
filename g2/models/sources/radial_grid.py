@@ -389,8 +389,8 @@ class RadialGrid(source.ChaoticSource):
         }
 
     @classmethod
-    def from_hdf5(cls, hdf_file: str, distance: float = 204379200000000.0, 
-                  phi_B: float = 0.0) -> "RadialGrid":
+    def from_hdf5(cls, hdf_file: str, distance: float = 204379200000000.0,
+                  phi_B: float = 0.0, p_rays_units: str = 'm') -> "RadialGrid":
         """
         Create RadialGrid instance from HDF5 file.
         
@@ -402,6 +402,9 @@ class RadialGrid(source.ChaoticSource):
             Distance to source in meters
         phi_B : float
             Baseline orientation angle in radians
+        p_rays_units : str
+            Units of p_rays in the HDF5 file. Options: 'm' (meters), 'cm' (centimeters)
+            Default is 'm' (meters)
             
         Returns
         -------
@@ -414,7 +417,15 @@ class RadialGrid(source.ChaoticSource):
         # Extract data arrays
         lambdas = intensity.index.values      # Wavelength grid [Angstrom]
         I_nu_p = intensity.values            # Intensity data [n_wavelengths, n_radial_points]
-        p_rays = intensity.columns.values    # Impact parameter [meters]
+        p_rays = intensity.columns.values    # Impact parameter [original units]
+        
+        # Convert p_rays to meters if needed
+        if p_rays_units == 'cm':
+            p_rays = p_rays * 1e-2  # Convert cm to meters
+        elif p_rays_units == 'm':
+            pass  # Already in meters
+        else:
+            raise ValueError(f"Unsupported p_rays_units: {p_rays_units}. Use 'm' or 'cm'.")
         
         # Flip arrays to ensure proper ordering (as done in II.ipynb)
         lambdas = np.flip(lambdas)
