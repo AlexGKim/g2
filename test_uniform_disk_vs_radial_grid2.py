@@ -50,13 +50,13 @@ def create_radial_grid2():
     lambdas = np.linspace(4000, 7000, 10)  # Angstrom
     
     # Create p_rays uniformly sampled from 0 to 2*radius
-    p_rays = np.linspace(0, 10 * radius_rad, 1000)  # radians
+    p_rays = np.linspace(0, radius_rad, 100)  # radians
     
-    # Create I_nu_p: 25 ones (inside disk) followed by 25 zeros (outside disk)
+    # Create I_nu_p: uniform disk profile (1 inside radius, 0 outside)
     I_nu_p = np.zeros((len(lambdas), len(p_rays)))
     for i, lam in enumerate(lambdas):
-        # First 25 points (inside radius) = 1, last 25 points (outside radius) = 0
-        disk_profile = np.concatenate([np.ones(100), np.zeros(900)])
+        # Create step function: 1 inside radius, 0 outside
+        disk_profile = np.where(p_rays <= radius_rad, 1.0, 0.0)
         I_nu_p[i, :] = disk_profile
     
     # Create RadialGrid2

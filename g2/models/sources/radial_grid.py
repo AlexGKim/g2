@@ -505,103 +505,103 @@ class RadialGrid2(source.ChaoticSource):
         self.freq_min = np.min(self.frequency_grid)
         self.freq_max = np.max(self.frequency_grid)
 
-    def dft_polar(self, y: np.ndarray, norder: int = None) -> np.ndarray:
-        """
-        Polar DFT algorithm from II.ipynb.
+    # def dft_polar(self, y: np.ndarray, norder: int = None) -> np.ndarray:
+    #     """
+    #     Polar DFT algorithm from II.ipynb.
         
-        Computes the polar discrete Fourier transform using Bessel functions.
-        This is the core algorithm for calculating gamma (visibility function).
+    #     Computes the polar discrete Fourier transform using Bessel functions.
+    #     This is the core algorithm for calculating gamma (visibility function).
         
-        Parameters
-        ----------
-        y : np.ndarray
-            Input radial intensity profile
-        norder : int, optional
-            Number of output points. If None, uses len(y)
+    #     Parameters
+    #     ----------
+    #     y : np.ndarray
+    #         Input radial intensity profile
+    #     norder : int, optional
+    #         Number of output points. If None, uses len(y)
             
-        Returns
-        -------
-        np.ndarray
-            Polar DFT result (gamma values)
-        """
-        ny = len(y)
+    #     Returns
+    #     -------
+    #     np.ndarray
+    #         Polar DFT result (gamma values)
+    #     """
+    #     ny = len(y)
         
-        if norder is None:
-            norder = ny
+    #     if norder is None:
+    #         norder = ny
             
-        rhos = np.arange(norder) / ny
-        ans = np.zeros(norder)
-        theta = np.arange(ny)
+    #     rhos = np.arange(norder) / ny
+    #     ans = np.zeros(norder)
+    #     theta = np.arange(ny)
         
-        for i, rho in enumerate(rhos):
-            integrand = y * jv(0, 2 * np.pi * rho * theta) * theta
-            ans[i] = np.trapezoid(integrand)
+    #     for i, rho in enumerate(rhos):
+    #         integrand = y * jv(0, 2 * np.pi * rho * theta) * theta
+    #         ans[i] = np.trapezoid(integrand)
             
-        return 2 * np.pi * ans
+    #     return 2 * np.pi * ans
 
-    def dft_polar_der(self, y: np.ndarray, norder: int = None) -> np.ndarray:
-        """
-        Derivative of polar DFT from II.ipynb.
+    # def dft_polar_der(self, y: np.ndarray, norder: int = None) -> np.ndarray:
+    #     """
+    #     Derivative of polar DFT from II.ipynb.
         
-        Computes the derivative of the polar DFT for use in Jacobian calculations.
+    #     Computes the derivative of the polar DFT for use in Jacobian calculations.
         
-        Parameters
-        ----------
-        y : np.ndarray
-            Input radial intensity profile
-        norder : int, optional
-            Number of output points. If None, uses len(y)
+    #     Parameters
+    #     ----------
+    #     y : np.ndarray
+    #         Input radial intensity profile
+    #     norder : int, optional
+    #         Number of output points. If None, uses len(y)
             
-        Returns
-        -------
-        np.ndarray
-            Derivative of polar DFT
-        """
-        ny = len(y)
+    #     Returns
+    #     -------
+    #     np.ndarray
+    #         Derivative of polar DFT
+    #     """
+    #     ny = len(y)
         
-        if norder is None:
-            norder = ny
+    #     if norder is None:
+    #         norder = ny
             
-        rhos = np.arange(norder) / ny
-        ans = np.zeros(norder)
-        theta = np.arange(ny)
+    #     rhos = np.arange(norder) / ny
+    #     ans = np.zeros(norder)
+    #     theta = np.arange(ny)
         
-        for i, rho in enumerate(rhos):
-            integrand = y * jv(1, 2 * np.pi * rho * theta) * theta**2
-            ans[i] = np.trapezoid(integrand)
+    #     for i, rho in enumerate(rhos):
+    #         integrand = y * jv(1, 2 * np.pi * rho * theta) * theta**2
+    #         ans[i] = np.trapezoid(integrand)
             
-        return -(2 * np.pi)**2 * ans
+    #     return -(2 * np.pi)**2 * ans
 
-    def dgamma2ds(self, y: np.ndarray, norder: int = None) -> np.ndarray:
-        """
-        Calculate derivative of |gamma|^2 with respect to size parameter s.
+    # def dgamma2ds(self, y: np.ndarray, norder: int = None) -> np.ndarray:
+    #     """
+    #     Calculate derivative of |gamma|^2 with respect to size parameter s.
         
-        This implements the dgamma2ds algorithm from II.ipynb for calculating
-        the Jacobian of |V|^2 with respect to the size parameter.
+    #     This implements the dgamma2ds algorithm from II.ipynb for calculating
+    #     the Jacobian of |V|^2 with respect to the size parameter.
         
-        Parameters
-        ----------
-        y : np.ndarray
-            Input radial intensity profile
-        norder : int, optional
-            Number of output points. If None, uses len(y)
+    #     Parameters
+    #     ----------
+    #     y : np.ndarray
+    #         Input radial intensity profile
+    #     norder : int, optional
+    #         Number of output points. If None, uses len(y)
             
-        Returns
-        -------
-        np.ndarray
-            Derivative of |gamma|^2 with respect to size parameter
-        """
-        ny = len(y)
+    #     Returns
+    #     -------
+    #     np.ndarray
+    #         Derivative of |gamma|^2 with respect to size parameter
+    #     """
+    #     ny = len(y)
         
-        if norder is None:
-            norder = ny
+    #     if norder is None:
+    #         norder = ny
             
-        rhos = np.arange(norder) / ny
+    #     rhos = np.arange(norder) / ny
         
-        gamma = self.dft_polar(y, norder=norder)
-        dgamma_drho = self.dft_polar_der(y, norder=norder)
+    #     gamma = self.dft_polar(y, norder=norder)
+    #     dgamma_drho = self.dft_polar_der(y, norder=norder)
         
-        return -2 * gamma * rhos * dgamma_drho
+    #     return -2 * gamma * rhos * dgamma_drho
 
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, params=None) -> Union[float, np.ndarray]:
         """
@@ -668,8 +668,8 @@ class RadialGrid2(source.ChaoticSource):
         # Integrate over radial coordinates
         # For polar DFT consistency, use indices like in the dft_polar algorithm
         # Convert to solid angle integration: d²n̂ = 2π r dr for radial symmetry
-        theta = np.arange(len(intensity_profile))  # indices, like in dft_polar
-        integrand = intensity_profile * theta * 2 * np.pi
+        # theta = np.arange(len(intensity_profile))  # indices, like in dft_polar
+        integrand = intensity_profile * self.p_rays * 2 * np.pi
         
         return np.trapezoid(integrand)
 
@@ -720,9 +720,10 @@ class RadialGrid2(source.ChaoticSource):
         # Calculate the polar Fourier transform:
         # V(u) = 2π ∫ I_nu_p(r) J_0(2π u r) r dr
         integrand = intensity_profile * jv(0, 2 * np.pi * u * scaled_p_rays) * scaled_p_rays
+        integrand_0 = intensity_profile * scaled_p_rays
         
         # Use trapezoidal rule for integration
-        visibility = 2 * np.pi * np.trapezoid(integrand, scaled_p_rays)
+        visibility = np.trapezoid(integrand, scaled_p_rays) / np.trapezoid(integrand_0, scaled_p_rays)
         
         return visibility + 0.0j
 
