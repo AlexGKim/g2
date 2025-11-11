@@ -675,10 +675,12 @@ class RadialGrid2(source.ChaoticSource):
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
-        Calculate the spatial visibility function V using polar DFT.
+        Calculate the spatial visibility function V using polar Fourier transform.
         
-        This implements the core visibility calculation using the dft_polar
-        algorithm from II.ipynb.
+        This implements the Fourier transform of a 2D function in polar coordinates:
+        V(u) = 2π ∫ I_nu_p(r) J_0(2π u r) r dr
+        
+        where the integral is computed using the trapezoidal rule.
         
         Parameters
         ----------
@@ -703,14 +705,6 @@ class RadialGrid2(source.ChaoticSource):
         # Get intensity profile for this frequency
         intensity_profile = self.I_nu_p[freq_idx, :]
         
-        # Normalize intensity profile by specific flux
-        flux = self.specific_flux(nu_0)
-        intensity_norm = intensity_profile / flux
-        
-        # Apply polar DFT to get gamma (which equals V)
-        gamma = self.dft_polar(intensity_norm)
-        gamma = fftshift(gamma)  # Shift to center zero frequency
-        
         # Convert baseline to spatial frequency
         c = 2.99792458e8
         wavelength = c / nu_0
@@ -720,78 +714,89 @@ class RadialGrid2(source.ChaoticSource):
         # Calculate spatial frequency u = |B|/λ
         u = baseline_length / wavelength
         
-        # Create frequency coordinates using fftfreq and fftshift (like GridSource)
-        # The spacing in the polar DFT corresponds to the angular sampling
-        # Use the actual spacing between p_rays points, scaled by 's' parameter
-        angular_spacing = (self.p_rays[1] - self.p_rays[0]) / params.get('s', 1.0)
-        u_coords = fftshift(fftfreq(len(gamma), d=angular_spacing))
+        # Apply size parameter scaling to the radial coordinates
+        scaled_p_rays = self.p_rays / params.get('s', 1.0)
         
-        # Find the closest frequency coordinate
-        u_idx = np.argmin(np.abs(u_coords - u))
+        # Calculate the polar Fourier transform:
+        # V(u) = 2π ∫ I_nu_p(r) J_0(2π u r) r dr
+        integrand = intensity_profile * jv(0, 2 * np.pi * u * scaled_p_rays) * scaled_p_rays
         
-        return gamma[u_idx] + 0.0j
+        # Use trapezoidal rule for integration
+        visibility = 2 * np.pi * np.trapezoid(integrand, scaled_p_rays)
+        
+        return visibility + 0.0j
 
-    def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> Dict[str, float]:
-        """
-        Calculate the Jacobian of |V|² with respect to source parameters.
+    # def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> Dict[str, float]:
+    #     """
+    #     Calculate the Jacobian of |V|² with respect to source parameters.
         
-        This implements the dgamma2ds algorithm from II.ipynb.
+    #     This implements the dgamma2ds algorithm from II.ipynb.
         
-        Parameters
-        ----------
-        nu_0 : float
-            Central frequency in Hz
-        baseline : array_like, shape (3,)
-            Baseline vector in meters [Bx, By, Bz]
-        params : dict, optional
-            Source parameters
+    #     Parameters
+    #     ----------
+    #     nu_0 : float
+    #         Central frequency in Hz
+    #     baseline : array_like, shape (3,)
+    #         Baseline vector in meters [Bx, By, Bz]
+    #     params : dict, optional
+    #         Source parameters
             
-        Returns
-        -------
-        jacobian : dict
-            Dictionary with parameter derivatives
-        """
-        if params is None:
-            params = self.get_params()
+    #     Returns
+    #     -------
+    #     jacobian : dict
+    #         Dictionary with parameter derivatives
+    #     """
+    #     if params is None:
+    #         params = self.get_params()
         
-        # Find the closest frequency index
-        freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
+    #     # Find the closest frequency index
+    #     freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
         
-        # Get intensity profile for this frequency
-        intensity_profile = self.I_nu_p[freq_idx, :]
+    #     # Get intensity profile for this frequency
+    #     intensity_profile = self.I_nu_p[freq_idx, :]
         
-        # Normalize intensity profile by specific flux
-        flux = self.specific_flux(nu_0)
-        intensity_norm = intensity_profile / flux
+    #     # Normalize intensity profile by specific flux
+    #     flux = self.specific_flux(nu_0)
+    #     intensity_norm = intensity_profile / flux
         
-        # Calculate dgamma2ds
-        dgamma2ds_result = self.dgamma2ds(intensity_norm)
-        dgamma2ds_result = fftshift(dgamma2ds_result)  # Shift to center zero frequency
+    #     # Calculate dgamma2ds
+    #     dgamma2ds_result = self.dgamma2ds(intensity_norm)
+    #     dgamma2ds_result = fftshift(dgamma2ds_result)  # Shift to center zero frequency
         
-        # Convert baseline to appropriate index (same logic as V method)
-        c = 2.99792458e8
-        wavelength = c / nu_0
-        baseline_perp = baseline[:2]
-        baseline_length = np.linalg.norm(baseline_perp)
+    #     # Convert baseline to appropriate index (same logic as V method)
+    #     c = 2.99792458e8
+    #     wavelength = c / nu_0
+    #     baseline_perp = baseline[:2]
+    #     baseline_length = np.linalg.norm(baseline_perp)
         
-        # Calculate spatial frequency u = |B|/λ
-        u = baseline_length / wavelength
+    #     # Calculate spatial frequency u = |B|/λ
+    #     u = baseline_length / wavelength
         
-        # Create frequency coordinates using fftfreq and fftshift (like GridSource)
-        # Use the actual spacing between p_rays points, scaled by 's' parameter
-        angular_spacing = (self.p_rays[1] - self.p_rays[0]) / params.get('s', 1.0)
-        u_coords = fftshift(fftfreq(len(dgamma2ds_result), d=angular_spacing))
+    #     # Map spatial frequency to polar DFT coordinate (same logic as V method)
+    #     max_radius = np.max(self.p_rays) / params.get('s', 1.0)
+    #     rho = u * 2 * np.pi / max_radius
         
-        # Find the closest frequency coordinate
-        u_idx = np.argmin(np.abs(u_coords - u))
+    #     # Convert rho to index in the dgamma2ds_result array
+    #     ny = len(intensity_norm)
+    #     rho_index = rho * ny
         
-        jacobian = {}
+    #     # Handle the fftshift: the zero frequency is at the center
+    #     center_idx = len(dgamma2ds_result) // 2
+    #     shifted_index = center_idx + rho_index
         
-        # Derivative with respect to size parameter 's'
-        if 's' in params:
-            jacobian['s'] = dgamma2ds_result[u_idx]
+    #     # Find the closest index
+    #     if shifted_index < 0 or shifted_index >= len(dgamma2ds_result):
+    #         u_idx = 0
+    #     else:
+    #         u_idx = int(round(shifted_index))
         
-        return jacobian
+    #     jacobian = {}
+        
+    #     # Derivative with respect to size parameter 's'
+    #     if 's' in params:
+    #         jacobian['s'] = dgamma2ds_result[u_idx]
+        
+    #     return jacobian
 
     def get_params(self) -> Dict[str, Any]:
         """
