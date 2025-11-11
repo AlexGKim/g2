@@ -638,7 +638,7 @@ class RadialGrid2(source.ChaoticSource):
             intensity_profile = self.I_nu_p[freq_idx, :]
             
             # Interpolate at the requested radial coordinate
-            return np.interp(scaled_radial_coord, self.p_rays, intensity_profile)
+            return np.interp(scaled_radial_coord, self.p_rays, intensity_profile, right=0.)
         else:
             # Array of frequencies
             nu_array = np.asarray(nu)
