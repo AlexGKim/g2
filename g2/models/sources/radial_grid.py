@@ -277,13 +277,13 @@ class RadialGrid(source.ChaoticSource):
             params = self.get_params()
         
         # Find the closest frequency index
-        freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
+        freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
         # Get intensity profile for this frequency
         intensity_profile = self.I_nu_p[freq_idx, :]
         
         # Normalize intensity profile
-        intensity_norm = intensity_profile / np.sum(intensity_profile*self.p_rays)
+        intensity_norm = intensity_profile / jnp.sum(intensity_profile*self.p_rays)
         
         # Apply polar DFT to get gamma (which equals V)
         gamma = self.dft_polar(intensity_norm)
@@ -293,18 +293,18 @@ class RadialGrid(source.ChaoticSource):
         c = 2.99792458e8
         wavelength = c / nu_0
         baseline_perp = baseline[:2]
-        baseline_length = np.linalg.norm(baseline_perp)
+        baseline_length = jnp.linalg.norm(baseline_perp)
         
         # Calculate spatial frequency u = |B|/λ
         u = baseline_length / wavelength
         
         # Create frequency coordinates using fftfreq and fftshift (like GridSource)
         # The spacing in the polar DFT corresponds to the angular sampling
-        angular_spacing = np.max(self.p_rays) / self.distance / len(intensity_norm)
+        angular_spacing = jnp.max(self.p_rays) / self.distance / len(intensity_norm)
         u_coords = fftshift(fftfreq(len(gamma), d=angular_spacing))
         
         # Find the closest frequency coordinate
-        u_idx = np.argmin(np.abs(u_coords - u))
+        u_idx = jnp.argmin(jnp.abs(u_coords - u))
         
         return gamma[u_idx] + 0.0j
 
@@ -700,7 +700,7 @@ class RadialGrid2(source.ChaoticSource):
             params = self.get_params()
         
         # Find the closest frequency index
-        freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
+        freq_idx = jnp.argmin(jnp.abs(self.frequency_grid - nu_0))
         
         # Get intensity profile for this frequency
         intensity_profile = self.I_nu_p[freq_idx, :]
@@ -709,7 +709,7 @@ class RadialGrid2(source.ChaoticSource):
         c = 2.99792458e8
         wavelength = c / nu_0
         baseline_perp = baseline[:2]
-        baseline_length = np.linalg.norm(baseline_perp)
+        baseline_length = jnp.linalg.norm(baseline_perp)
         
         # Calculate spatial frequency u = |B|/λ
         u = baseline_length / wavelength
@@ -719,11 +719,11 @@ class RadialGrid2(source.ChaoticSource):
         
         # Calculate the polar Fourier transform:
         # V(u) = 2π ∫ I_nu_p(r) J_0(2π u r) r dr
-        integrand = intensity_profile * jv(0, 2 * np.pi * u * scaled_p_rays) * scaled_p_rays
+        integrand = intensity_profile * jv(0, 2 * jnp.pi * u * scaled_p_rays) * scaled_p_rays
         integrand_0 = intensity_profile * scaled_p_rays
         
         # Use trapezoidal rule for integration
-        visibility = np.trapezoid(integrand, scaled_p_rays) / np.trapezoid(integrand_0, scaled_p_rays)
+        visibility = jnp.trapezoid(integrand, scaled_p_rays) / jnp.trapezoid(integrand_0, scaled_p_rays)
         
         return visibility + 0.0j
 
