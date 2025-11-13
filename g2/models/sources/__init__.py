@@ -3,4 +3,4 @@ Classes used to describe source models
 ======================================
 """
 
-from .radial_grid import RadialGrid
+from .radial_grid import RadialGrid2
