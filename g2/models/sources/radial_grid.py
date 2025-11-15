@@ -492,22 +492,31 @@ class RadialGrid2(source.ChaoticSource):
     and applies the polar DFT algorithms from II.ipynb for efficient visibility
     calculations.
     
-    The intensity data is provided as I_nu_p(lambda, p) where:
+    The intensity data I_nu_p(lambda, p) has arbitrary normalization - it represents
+    the relative intensity profile as a function of wavelength and radial coordinate,
+    but does not need to be in physical units. The actual flux normalization is
+    provided separately via the specific_flux parameter.
+    
+    Parameters:
     - lambda: wavelength grid
     - p: impact parameter (radial coordinate)
+    - I_nu_p: intensity profile with arbitrary normalization
+    - specific_flux: total flux density at each wavelength (physical units)
     """
     
-    def __init__(self, lambdas: np.ndarray, I_nu_p: np.ndarray, p_rays: np.ndarray,
-                 s: float = 1.0):
+    def __init__(self, specific_flux: np.ndarray, lambdas: np.ndarray,
+                 I_nu_p: np.ndarray, p_rays: np.ndarray, s: float = 1.0):
         """
-        Initialize RadialGrid with wavelength, intensity, and radial coordinate data.
+        Initialize RadialGrid2 with flux, wavelength, intensity, and radial coordinate data.
         
         Parameters
         ----------
+        specific_flux : np.ndarray
+            Total flux density at each wavelength in W m⁻² Hz⁻¹, shape (n_wavelengths,)
         lambdas : np.ndarray
             Wavelength grid in Angstrom, shape (n_wavelengths,)
         I_nu_p : np.ndarray
-            Intensity data, shape (n_wavelengths, n_radial_points)
+            Intensity data with arbitrary normalization, shape (n_wavelengths, n_radial_points)
         p_rays : np.ndarray
             Impact parameter coordinates in radians, shape (n_radial_points,)
         s : float
@@ -516,8 +525,9 @@ class RadialGrid2(source.ChaoticSource):
         c = 2.99792458e8  # m/s
         
         # Store input data
+        self.specific_flux_array = jnp.array(specific_flux)  # [W m⁻² Hz⁻¹]
         self.lambdas = jnp.array(lambdas)  # [Angstrom]
-        self.I_nu_p = jnp.array(I_nu_p)    # [intensity units from data]
+        self.I_nu_p = jnp.array(I_nu_p)    # [arbitrary normalization]
         self.p_rays = jnp.array(p_rays)    # [radians]
         
         # Calculate frequency grid
@@ -530,6 +540,8 @@ class RadialGrid2(source.ChaoticSource):
         self.n_wavelengths, self.n_radial_points = self.I_nu_p.shape
         
         # Validate input dimensions
+        if len(self.specific_flux_array) != self.n_wavelengths:
+            raise ValueError(f"Specific flux array length {len(self.specific_flux_array)} doesn't match number of wavelengths {self.n_wavelengths}")
         if len(self.lambdas) != self.n_wavelengths:
             raise ValueError(f"Wavelength grid length {len(self.lambdas)} doesn't match intensity wavelength dimension {self.n_wavelengths}")
         if len(self.p_rays) != self.n_radial_points:
@@ -539,103 +551,6 @@ class RadialGrid2(source.ChaoticSource):
         self.freq_min = jnp.min(self.frequency_grid)
         self.freq_max = jnp.max(self.frequency_grid)
 
-    # def dft_polar(self, y: np.ndarray, norder: int = None) -> np.ndarray:
-    #     """
-    #     Polar DFT algorithm from II.ipynb.
-        
-    #     Computes the polar discrete Fourier transform using Bessel functions.
-    #     This is the core algorithm for calculating gamma (visibility function).
-        
-    #     Parameters
-    #     ----------
-    #     y : np.ndarray
-    #         Input radial intensity profile
-    #     norder : int, optional
-    #         Number of output points. If None, uses len(y)
-            
-    #     Returns
-    #     -------
-    #     np.ndarray
-    #         Polar DFT result (gamma values)
-    #     """
-    #     ny = len(y)
-        
-    #     if norder is None:
-    #         norder = ny
-            
-    #     rhos = np.arange(norder) / ny
-    #     ans = np.zeros(norder)
-    #     theta = np.arange(ny)
-        
-    #     for i, rho in enumerate(rhos):
-    #         integrand = y * jv(0, 2 * np.pi * rho * theta) * theta
-    #         ans[i] = np.trapezoid(integrand)
-            
-    #     return 2 * np.pi * ans
-
-    # def dft_polar_der(self, y: np.ndarray, norder: int = None) -> np.ndarray:
-    #     """
-    #     Derivative of polar DFT from II.ipynb.
-        
-    #     Computes the derivative of the polar DFT for use in Jacobian calculations.
-        
-    #     Parameters
-    #     ----------
-    #     y : np.ndarray
-    #         Input radial intensity profile
-    #     norder : int, optional
-    #         Number of output points. If None, uses len(y)
-            
-    #     Returns
-    #     -------
-    #     np.ndarray
-    #         Derivative of polar DFT
-    #     """
-    #     ny = len(y)
-        
-    #     if norder is None:
-    #         norder = ny
-            
-    #     rhos = np.arange(norder) / ny
-    #     ans = np.zeros(norder)
-    #     theta = np.arange(ny)
-        
-    #     for i, rho in enumerate(rhos):
-    #         integrand = y * jv(1, 2 * np.pi * rho * theta) * theta**2
-    #         ans[i] = np.trapezoid(integrand)
-            
-    #     return -(2 * np.pi)**2 * ans
-
-    # def dgamma2ds(self, y: np.ndarray, norder: int = None) -> np.ndarray:
-    #     """
-    #     Calculate derivative of |gamma|^2 with respect to size parameter s.
-        
-    #     This implements the dgamma2ds algorithm from II.ipynb for calculating
-    #     the Jacobian of |V|^2 with respect to the size parameter.
-        
-    #     Parameters
-    #     ----------
-    #     y : np.ndarray
-    #         Input radial intensity profile
-    #     norder : int, optional
-    #         Number of output points. If None, uses len(y)
-            
-    #     Returns
-    #     -------
-    #     np.ndarray
-    #         Derivative of |gamma|^2 with respect to size parameter
-    #     """
-    #     ny = len(y)
-        
-    #     if norder is None:
-    #         norder = ny
-            
-    #     rhos = np.arange(norder) / ny
-        
-    #     gamma = self.dft_polar(y, norder=norder)
-    #     dgamma_drho = self.dft_polar_der(y, norder=norder)
-        
-    #     return -2 * gamma * rhos * dgamma_drho
 
     def intensity(self, nu: Union[float, np.ndarray], n_hat: np.ndarray, params=None) -> Union[float, np.ndarray]:
         """
@@ -683,7 +598,10 @@ class RadialGrid2(source.ChaoticSource):
 
     def specific_flux(self, nu: float) -> float:
         """
-        Calculate total flux F_nu = ∫ I_nu d²n̂.
+        Return the pre-computed specific flux at the given frequency.
+        
+        The specific flux values are provided during initialization and represent
+        the total flux density F_nu = ∫ I_nu d²n̂ at each wavelength.
         
         Parameters
         ----------
@@ -693,19 +611,11 @@ class RadialGrid2(source.ChaoticSource):
         Returns
         -------
         flux : float
-            Total flux density
+            Total flux density in W m⁻² Hz⁻¹
         """
         # Find closest frequency
         freq_idx = np.argmin(np.abs(self.frequency_grid - nu))
-        intensity_profile = self.I_nu_p[freq_idx, :]
-        
-        # Integrate over radial coordinates
-        # For polar DFT consistency, use indices like in the dft_polar algorithm
-        # Convert to solid angle integration: d²n̂ = 2π r dr for radial symmetry
-        # theta = np.arange(len(intensity_profile))  # indices, like in dft_polar
-        integrand = intensity_profile * self.p_rays * 2 * np.pi
-        
-        return np.trapezoid(integrand)
+        return float(self.specific_flux_array[freq_idx])
 
     def V(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> complex:
         """
@@ -761,78 +671,6 @@ class RadialGrid2(source.ChaoticSource):
         
         return visibility + 0.0j
 
-    # def V_squared_jacobian(self, nu_0: float, baseline: np.ndarray, params: dict = None) -> Dict[str, float]:
-    #     """
-    #     Calculate the Jacobian of |V|² with respect to source parameters.
-        
-    #     This implements the dgamma2ds algorithm from II.ipynb.
-        
-    #     Parameters
-    #     ----------
-    #     nu_0 : float
-    #         Central frequency in Hz
-    #     baseline : array_like, shape (3,)
-    #         Baseline vector in meters [Bx, By, Bz]
-    #     params : dict, optional
-    #         Source parameters
-            
-    #     Returns
-    #     -------
-    #     jacobian : dict
-    #         Dictionary with parameter derivatives
-    #     """
-    #     if params is None:
-    #         params = self.get_params()
-        
-    #     # Find the closest frequency index
-    #     freq_idx = np.argmin(np.abs(self.frequency_grid - nu_0))
-        
-    #     # Get intensity profile for this frequency
-    #     intensity_profile = self.I_nu_p[freq_idx, :]
-        
-    #     # Normalize intensity profile by specific flux
-    #     flux = self.specific_flux(nu_0)
-    #     intensity_norm = intensity_profile / flux
-        
-    #     # Calculate dgamma2ds
-    #     dgamma2ds_result = self.dgamma2ds(intensity_norm)
-    #     dgamma2ds_result = fftshift(dgamma2ds_result)  # Shift to center zero frequency
-        
-    #     # Convert baseline to appropriate index (same logic as V method)
-    #     c = 2.99792458e8
-    #     wavelength = c / nu_0
-    #     baseline_perp = baseline[:2]
-    #     baseline_length = np.linalg.norm(baseline_perp)
-        
-    #     # Calculate spatial frequency u = |B|/λ
-    #     u = baseline_length / wavelength
-        
-    #     # Map spatial frequency to polar DFT coordinate (same logic as V method)
-    #     max_radius = np.max(self.p_rays) / params.get('s', 1.0)
-    #     rho = u * 2 * np.pi / max_radius
-        
-    #     # Convert rho to index in the dgamma2ds_result array
-    #     ny = len(intensity_norm)
-    #     rho_index = rho * ny
-        
-    #     # Handle the fftshift: the zero frequency is at the center
-    #     center_idx = len(dgamma2ds_result) // 2
-    #     shifted_index = center_idx + rho_index
-        
-    #     # Find the closest index
-    #     if shifted_index < 0 or shifted_index >= len(dgamma2ds_result):
-    #         u_idx = 0
-    #     else:
-    #         u_idx = int(round(shifted_index))
-        
-    #     jacobian = {}
-        
-    #     # Derivative with respect to size parameter 's'
-    #     if 's' in params:
-    #         jacobian['s'] = dgamma2ds_result[u_idx]
-        
-    #     return jacobian
-
     def get_params(self) -> Dict[str, Any]:
         """
         Get parameters that define the source model.
@@ -845,37 +683,6 @@ class RadialGrid2(source.ChaoticSource):
         return {
             's': self.s  # Size parameter
         }
-
-    @classmethod
-    def from_hdf5(cls, hdf_file: str, s: float = 1.0) -> "RadialGrid2":
-        """
-        Create RadialGrid2 instance from HDF5 file.
-        
-        Parameters
-        ----------
-        hdf_file : str
-            Path to HDF5 file containing intensity data
-        s : float
-            Size parameter (default: 1.0)
-            
-        Returns
-        -------
-        RadialGrid2
-            Configured RadialGrid2 instance
-        """
-        # Read the HDF5 file
-        intensity = pd.read_hdf(hdf_file, key='intensity')
-        
-        # Extract data arrays
-        lambdas = intensity.index.values      # Wavelength grid [Angstrom]
-        I_nu_p = intensity.values            # Intensity data [n_wavelengths, n_radial_points]
-        p_rays = intensity.columns.values    # Impact parameter [radians]
-        
-        # Flip arrays to ensure proper ordering (as done in II.ipynb)
-        lambdas = np.flip(lambdas)
-        I_nu_p = np.flip(I_nu_p, axis=0)
-        
-        return cls(lambdas, I_nu_p, p_rays, s=s)
 
     def get_spectrum_info(self) -> Dict[str, Any]:
         """
